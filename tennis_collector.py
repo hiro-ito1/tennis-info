@@ -21,19 +21,26 @@ SITES = [
     {"name": "筑紫野市テニス協会", "url": "http://chikushino-tennis.com/", "encoding": "shift_jis"},
 ]
 
-HISTORY_FILE = "tennis_history.json"
+RESULT_PAGES = [
+    {"name": "ぽよよん大会結果", "url": "https://chikushinotennis.web.fc2.com/jr_shiai_kekka.html"},
+    {"name": "ファーストステップ・ゴーゴーゴー大会", "url": "https://chikushinotennis.web.fc2.com/inter.html"},
+    {"name": "ゑびす醤油カップ", "url": "https://chikushinotennis.web.fc2.com/ebisucup.html"},
+]
 
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+HISTORY_FILE = "tennis_history.json"
+RESULT_HISTORY_FILE = "result_history.json"
+
+def load_history(filename):
+    if os.path.exists(filename):
+        with open(filename, "r", encoding="utf-8") as f:
             return json.load(f)
     return {}
 
-def save_history(history):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+def save_history(history, filename):
+    with open(filename, "w", encoding="utf-8") as f:
         json.dump(history, f, ensure_ascii=False, indent=2)
 
-def fetch_page(url, encoding):
+def fetch_page(url, encoding="utf-8"):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
         response = requests.get(url, headers=headers, timeout=15)
@@ -92,15 +99,44 @@ def parse_chikushino_city(html):
                 })
     return items[:15]
 
-def send_email(new_items):
+def parse_result_page(html, page_name):
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.find_all("tr")
+    results = []
+    for row in rows:
+        cols = row.find_all("td")
+        if len(cols) >= 3:
+            date_col = cols[0].get_text(strip=True).replace("\n", " ")
+            honsen = cols[2].get_text(strip=True) if len(cols) > 2 else ""
+            nii = cols[3].get_text(strip=True) if len(cols) > 3 else ""
+            if date_col and honsen and ("優勝" in honsen or "準優勝" in honsen):
+                results.append({
+                    "date": date_col[:30],
+                    "honsen": honsen[:300],
+                    "nii": nii[:300],
+                    "page": page_name,
+                    "id": hashlib.md5(f"{date_col}_{honsen}".encode()).hexdigest()[:8]
+                })
+    return results[:3]
+
+def send_email(new_items, new_results):
     try:
         body = "【筑紫野エリア テニス新着情報】\n\n"
-        for item in new_items:
-            body += f"日付: {item['date']}\n"
-            body += f"内容: {item['content']}\n"
-            body += f"サイト: {item['site']}\n"
-            body += f"URL: {item['url']}\n"
-            body += "-" * 30 + "\n"
+        if new_items:
+            body += "＝＝ 更新情報 ＝＝\n"
+            for item in new_items:
+                body += f"日付: {item['date']}\n"
+                body += f"内容: {item['content']}\n"
+                body += f"サイト: {item['site']}\n"
+                body += "-" * 30 + "\n"
+        if new_results:
+            body += "\n＝＝ 試合結果 ＝＝\n"
+            for r in new_results:
+                body += f"【{r['page']}】{r['date']}\n"
+                body += f"本戦: {r['honsen']}\n"
+                if r['nii']:
+                    body += f"2位T: {r['nii']}\n"
+                body += "-" * 30 + "\n"
         msg = MIMEMultipart()
         msg["From"] = SENDER_EMAIL
         msg["To"] = RECEIVER_EMAIL
@@ -113,15 +149,20 @@ def send_email(new_items):
     except Exception as e:
         print(f"  メール送信失敗: {e}")
 
-def post_threads_summary(new_items):
+def post_threads_summary(new_items, new_results):
     try:
         today = datetime.now().strftime("%Y年%m月%d日")
-        text = f"テニス新着情報まとめ {today}\n\n"
-        for item in new_items:
-            text += f"{item['date']}\n"
-            text += f"{item['content']}\n"
-            text += f"({item['site']})\n\n"
-        text += "#筑紫野テニス #福岡テニス #草トーナメント"
+        text = f"🎾筑紫野テニス情報 {today}\n\n"
+        if new_results:
+            text += "【試合結果】\n"
+            for r in new_results[:2]:
+                text += f"📅{r['date']}\n"
+                text += f"{r['honsen'][:100]}\n\n"
+        if new_items:
+            text += "【新着情報】\n"
+            for item in new_items[:3]:
+                text += f"・{item['content'][:30]}\n"
+        text += "\n#筑紫野テニス #福岡テニス #草トーナメント"
         if len(text) > 500:
             text = text[:490] + "..."
         res1 = requests.post(
@@ -138,7 +179,7 @@ def post_threads_summary(new_items):
             f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads_publish",
             params={"creation_id": container_id, "access_token": THREADS_TOKEN}
         )
-        print("  Threads投稿成功！（まとめ1投稿）")
+        print("  Threads投稿成功！")
     except Exception as e:
         print(f"  Threads投稿失敗: {e}")
 
@@ -147,25 +188,25 @@ def main():
     print(f"実行時刻: {datetime.now().strftime('%Y年%m月%d日 %H:%M')}")
     print("=" * 50)
 
-    history = load_history()
+    history = load_history(HISTORY_FILE)
+    result_history = load_history(RESULT_HISTORY_FILE)
     new_items_all = []
+    new_results_all = []
 
+    # 更新情報の収集
     for site in SITES:
         print(f"\n{site['name']} をチェック中...")
         html = fetch_page(site["url"], site["encoding"])
         if not html:
             continue
-
         if "chikushinotennis" in site["url"]:
             items = parse_chikushinotennis(html)
         else:
             items = parse_chikushino_city(html)
-
         print(f"  取得件数: {len(items)}件")
         site_key = site["name"]
         known_ids = set(history.get(site_key, []))
         new_items = [item for item in items if item["id"] not in known_ids]
-
         if new_items:
             print(f"  新着情報: {len(new_items)}件")
             for item in new_items:
@@ -175,15 +216,36 @@ def main():
         else:
             print("  新着なし")
 
+    # 試合結果の詳細収集
+    print("\n試合結果ページをチェック中...")
+    for page in RESULT_PAGES:
+        print(f"  {page['name']}...")
+        html = fetch_page(page["url"])
+        if not html:
+            continue
+        results = parse_result_page(html, page["name"])
+        known_ids = set(result_history.get(page["name"], []))
+        new_results = [r for r in results if r["id"] not in known_ids]
+        if new_results:
+            print(f"    新着結果: {len(new_results)}件")
+            for r in new_results:
+                print(f"      [{r['date']}] {r['honsen'][:50]}...")
+            new_results_all.extend(new_results)
+            result_history[page["name"]] = list(known_ids | {r["id"] for r in results})
+        else:
+            print("    新着なし")
+
     print("\n" + "=" * 50)
-    if new_items_all:
-        print(f"{len(new_items_all)}件の新着情報を発見！")
-        send_email(new_items_all)
-        post_threads_summary(new_items_all)
+    if new_items_all or new_results_all:
+        total = len(new_items_all) + len(new_results_all)
+        print(f"{total}件の情報を発見！")
+        send_email(new_items_all, new_results_all)
+        post_threads_summary(new_items_all, new_results_all)
     else:
         print("新着情報はありませんでした")
 
-    save_history(history)
+    save_history(history, HISTORY_FILE)
+    save_history(result_history, RESULT_HISTORY_FILE)
     print("完了！")
 
 if __name__ == "__main__":
