@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>福岡テニス情報</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .header .subtitle {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .tabs {
+            display: flex;
+            background: white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        
+        .tab.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
+            font-weight: bold;
+        }
+        
+        .content {
+            padding: 15px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .section {
+            display: none;
+        }
+        
+        .section.active {
+            display: block;
+        }
+        
+        .category {
+            margin-bottom: 30px;
+        }
+        
+        .category-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 15px;
+            padding-left: 10px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: transform 0.2s;
+        }
+        
+        .card:active {
+            transform: scale(0.98);
+        }
+        
+        .card-date {
+            color: #667eea;
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 5px;
+        }
+        
+        .card-title {
+            font-size: 15px;
+            margin-bottom: 8px;
+        }
+        
+        .card-meta {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        .card-link {
+            display: inline-block;
+            margin-top: 8px;
+            color: #667eea;
+            text-decoration: none;
+            font-size: 13px;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-size: 12px;
+        }
+        
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            margin-left: 5px;
+        }
+        
+        .badge-new {
+            background: #ff6b6b;
+            color: white;
+        }
+        
+        .badge-deadline {
+            background: #ffd93d;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎾 福岡テニス情報</h1>
+        <div class="subtitle">最新の大会情報をチェック</div>
+    </div>
+
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('junior')">🎾 ジュニア</div>
+        <div class="tab" onclick="switchTab('adult')">🏆 一般</div>
+    </div>
+
+    <div class="content">
+        <!-- ジュニアセクション -->
+        <div id="junior" class="section active">
+            <div class="category">
+                <div class="category-title">📅 募集中の大会</div>
+                
+                <div class="card">
+                    <div class="card-date">5/10（土）<span class="badge badge-deadline">締切近い</span></div>
+                    <div class="card-title">筑紫野ジュニアカップ</div>
+                    <div class="card-meta">締切: 5/8（木）17:00</div>
+                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
+                </div>
+
+                <div class="card">
+                    <div class="card-date">5/25（日）</div>
+                    <div class="card-title">春季ジュニアテニス大会</div>
+                    <div class="card-meta">締切: 5/15（木）</div>
+                    <a href="#" class="card-link">詳細を見る →</a>
+                </div>
+            </div>
+
+            <div class="category">
+                <div class="category-title">📋 最新結果</div>
+                
+                <div class="card">
+                    <div class="card-date">4/28（月）<span class="badge badge-new">NEW</span></div>
+                    <div class="card-title">春季大会 結果発表</div>
+                    <div class="card-meta">U12・U14・U16 各部門</div>
+                    <a href="#" class="card-link">結果を見る →</a>
+                </div>
+            </div>
+        </div>
+
+        <!-- 一般セクション -->
+        <div id="adult" class="section">
+            <div class="category">
+                <div class="category-title">📅 募集中の大会</div>
+                
+                <div class="card">
+                    <div class="card-date">5/15（木）</div>
+                    <div class="card-title">筑紫野市民テニス大会</div>
+                    <div class="card-meta">締切: 5/12（月）</div>
+                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
+                </div>
+
+                <div class="card">
+                    <div class="card-date">6/1（日）</div>
+                    <div class="card-title">福岡県テニス選手権</div>
+                    <div class="card-meta">締切: 5/20（火）</div>
+                    <a href="#" class="card-link">詳細を見る →</a>
+                </div>
+            </div>
+
+            <div class="category">
+                <div class="category-title">📋 最新結果</div>
+                
+                <div class="card">
+                    <div class="card-date">4/20（日）</div>
+                    <div class="card-title">春季大会 結果</div>
+                    <div class="card-meta">男子シングルス・ダブルス</div>
+                    <a href="#" class="card-link">結果を見る →</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        最終更新: 2026年5月1日 8:00<br>
+        自動更新システム稼働中
+    </div>
+
+    <script>
+        function switchTab(tab) {
+            // タブの切り替え
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tab).classList.add('active');
+        }
+    </script>
+</body>
+</html>
