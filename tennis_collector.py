@@ -41,7 +41,7 @@ def save_data(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def scrape_site(url):
-    """サイトから情報を取得"""
+    """筑紫野ローンテニスクラブ専用：表形式から大会・結果を精密に抽出（Gemini版ロジック）"""
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -50,21 +50,44 @@ def scrape_site(url):
         response.encoding = response.apparent_encoding
         soup = BeautifulSoup(response.text, "html.parser")
         
-        # すべてのテキスト要素を取得
-        all_content = []
-        for tag in soup.find_all(['div', 'table', 'p', 'h1', 'h2', 'h3', 'h4', 'li']):
-            text = tag.get_text(separator=' ', strip=True)
-            if text and len(text) > 10:
-                all_content.append(text)
+        extracted_events = []
         
-        return {
-            "url": url,
-            "content": all_content,
-            "timestamp": datetime.now().isoformat()
-        }
+        # 表形式（tr）から抽出
+        for row in soup.find_all('tr'):
+            text = row.get_text(separator=' ', strip=True)
+            
+            # 日付パターンマッチ
+            date_match = re.search(r'(\d{1,2})月(\d{1,2})日', text)
+            if date_match:
+                # リンク取得
+                link_tag = row.find('a')
+                link_url = ""
+                if link_tag and link_tag.get('href'):
+                    link_url = requests.compat.urljoin(url, link_tag.get('href'))
+                
+                # 除外キーワード
+                ignore_keywords = ["休講", "定休日", "テニス教室", "スクール"]
+                if any(k in text for k in ignore_keywords):
+                    continue
+                
+                # 日付とタイトルを整形
+                event_date = f"{date_match.group(1)}/{date_match.group(2)}"
+                title = text.replace(date_match.group(0), "").strip()
+                title = re.sub(r'^[（\(].+?[\)）]', '', title).strip()
+                
+                extracted_events.append({
+                    "date": event_date,
+                    "title": title,
+                    "url": link_url,
+                    "category": classify_event(title)
+                })
+        
+        print(f"   ✓ {len(extracted_events)}件のイベントを抽出")
+        return extracted_events
+        
     except Exception as e:
-        print(f"❌ エラー: {url} - {e}")
-        return None
+        print(f"❌ 収集エラー: {e}")
+        return []
 
 def classify_event(text):
     """イベントを分類（ジュニア/一般）"""
@@ -72,155 +95,53 @@ def classify_event(text):
                        "こども", "子ども", "キッズ", "ファーストステップ", 
                        "ゴーゴーゴー", "ぽよよん", "チビ"]
     
-    text_lower = text.lower()
-    for keyword in junior_keywords:
-        if keyword.lower() in text_lower:
-            return "junior"
-    return "adult"
+    return "junior" if any(k in text for k in junior_keywords) else "adult"
 
-def extract_events_from_content(content_list, url, source_name):
-    """コンテンツからイベント情報を抽出"""
-    events = []
-    
-    # 大会・カップキーワード
-    event_keywords = ["大会", "カップ", "レッスン", "イベント", "試合"]
-    
-    # 日付パターン
-    date_patterns = [
-        r'(\d{1,2})/(\d{1,2})\(([月火水木金土日])\)',  # 5/17(日)
-        r'(\d{1,2})/(\d{1,2})',                        # 5/17
-        r'(\d{1,2})月(\d{1,2})日',                    # 5月17日
-    ]
-    
-    for text in content_list:
-        # イベント関連のキーワードが含まれているか
-        has_event_keyword = any(keyword in text for keyword in event_keywords)
-        
-        if not has_event_keyword:
-            continue
-        
-        # 日付を探す
-        date_found = None
-        for pattern in date_patterns:
-            match = re.search(pattern, text)
-            if match:
-                if len(match.groups()) >= 2:
-                    date_found = f"{match.group(1)}/{match.group(2)}"
-                break
-        
-        if date_found:
-            # タイトルを抽出（最初の100文字、または改行まで）
-            title = text.split('\n')[0][:100]
-            
-            # 詳細説明（200文字まで）
-            description = text[:200]
-            
-            event = {
-                "date": date_found,
-                "title": title.strip(),
-                "description": description.strip(),
-                "url": url,
-                "source": source_name,
-                "category": classify_event(text)
-            }
-            
-            events.append(event)
-    
-    return events
-
-def extract_all_events(data):
-    """全データからイベント情報を抽出"""
-    all_events = {"junior": [], "adult": []}
-    
-    for site_name, site_data in data.items():
-        if not site_data:
-            continue
-        
-        content = site_data.get("content", [])
-        url = site_data.get("url", "")
-        
-        events = extract_events_from_content(content, url, site_name)
-        
-        print(f"📊 {site_name}: {len(events)}件のイベントを抽出")
-        
-        # カテゴリ別に分類
-        for event in events:
-            category = event["category"]
-            all_events[category].append(event)
-    
-    # 重複削除（同じタイトルのイベントは1つだけ残す）
-    all_events["junior"] = remove_duplicates(all_events["junior"])
-    all_events["adult"] = remove_duplicates(all_events["adult"])
-    
-    print(f"🎾 ジュニア: {len(all_events['junior'])}件")
-    print(f"🏆 一般: {len(all_events['adult'])}件")
-    
-    return all_events
-
-def remove_duplicates(events):
-    """重複イベントを削除"""
-    seen = set()
-    unique_events = []
-    
-    for event in events:
-        # タイトルと日付の組み合わせで重複判定
-        key = (event["date"], event["title"][:30])
-        if key not in seen:
-            seen.add(key)
-            unique_events.append(event)
-    
-    return unique_events
-
-def generate_event_cards(events, max_items=10):
-    """イベントカードのHTMLを生成"""
+def generate_event_cards(events):
+    """イベントカードのHTML生成（オレンジデザイン）"""
     if not events:
-        return """
-                <div class="card">
-                    <div class="card-title">現在、登録されている情報はありません</div>
-                    <div class="card-meta">情報が更新され次第、自動で表示されます</div>
-                </div>
-"""
+        return '<div style="text-align:center; padding:40px; color:#999;">現在、新しい情報はありません。</div>'
     
-    cards = ""
-    for event in events[:max_items]:
-        date_display = event.get('date', '日付未定')
-        title = event.get('title', '詳細情報')
+    html = ""
+    for ev in events:
+        # 結果か要項かを判定
+        link_label = "試合結果を見る" if any(x in ev['title'] for x in ["結果", "予選", "本戦"]) else "大会要項を見る"
+        link_style = "btn-result" if "結果" in ev['title'] else "btn-info"
         
-        # タイトルをクリーンアップ
-        if len(title) > 80:
-            title = title[:80] + "..."
-        
-        source = event.get('source', '情報元不明')
-        url = event.get('url', '#')
-        description = event.get('description', '')[:100]
-        
-        cards += f"""
-                <div class="card">
-                    <div class="card-date">{date_display}</div>
-                    <div class="card-title">{title}</div>
-                    <div class="card-meta">{source}</div>
-                    <a href="{url}" class="card-link" target="_blank">詳細を見る →</a>
+        html += f"""
+        <div class="event-card">
+            <div class="event-date">{ev['date']}</div>
+            <div class="event-details">
+                <div class="event-title">{ev['title']}</div>
+                <div class="event-actions">
+                    <a href="{ev['url']}" class="btn {link_style}" target="_blank">{link_label}</a>
                 </div>
-"""
+            </div>
+        </div>
+        """
     
-    return cards
+    return html
 
 def update_html(events):
-    """HTMLファイルを更新"""
-    
-    junior_cards = generate_event_cards(events.get("junior", []), max_items=15)
-    adult_cards = generate_event_cards(events.get("adult", []), max_items=15)
-    
-    update_time = datetime.now().strftime('%Y年%m月%d日 %H:%M')
+    """HTMLファイルを更新（オレンジデザイン）"""
+    update_time = datetime.now().strftime('%Y/%m/%d %H:%M')
+    junior_html = generate_event_cards(events.get("junior", []))
+    adult_html = generate_event_cards(events.get("adult", []))
     
     html_content = f"""<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>福岡テニス情報 - 最新大会情報</title>
+    <title>福岡テニス速報</title>
     <meta name="description" content="福岡・筑紫野エリアのテニス大会情報を自動収集・配信">
     <style>
+        :root {{
+            --main: #FF8C00;
+            --sub: #FFD700;
+            --bg: #FFFBF5;
+        }}
+        
         * {{
             margin: 0;
             padding: 0;
@@ -229,70 +150,67 @@ def update_html(events):
         
         body {{
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-            background: #f5f5f5;
+            background: var(--bg);
+            margin: 0;
             color: #333;
-            line-height: 1.6;
+            padding-bottom: 80px;
         }}
         
         .header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--main), var(--sub));
             color: white;
-            padding: 20px 15px;
+            padding: 25px 15px;
             text-align: center;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }}
         
         .header h1 {{
-            font-size: 22px;
+            font-size: 24px;
             margin-bottom: 8px;
             font-weight: 600;
         }}
         
-        .header .subtitle {{
+        .header p {{
             font-size: 13px;
-            opacity: 0.9;
+            opacity: 0.95;
         }}
         
         .tabs {{
             display: flex;
             background: white;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             position: sticky;
             top: 0;
+            border-bottom: 2px solid #EEE;
             z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         }}
         
         .tab {{
             flex: 1;
             padding: 15px;
             text-align: center;
+            font-weight: bold;
+            color: #777;
             cursor: pointer;
-            border-bottom: 3px solid transparent;
             transition: all 0.3s;
-            font-size: 15px;
-            background: white;
+            border-bottom: 4px solid transparent;
         }}
         
         .tab.active {{
-            border-bottom-color: #667eea;
-            color: #667eea;
-            font-weight: bold;
-            background: #f8f9ff;
+            color: var(--main);
+            border-bottom-color: var(--main);
+            background: #FFF9F0;
         }}
         
         .tab:hover {{
-            background: #f8f9ff;
-        }}
-        
-        .content {{
-            padding: 15px;
-            max-width: 600px;
-            margin: 0 auto;
-            padding-bottom: 60px;
+            background: #FFF9F0;
         }}
         
         .section {{
             display: none;
+            padding: 15px;
+            max-width: 600px;
+            margin: 0 auto;
         }}
         
         .section.active {{
@@ -305,85 +223,98 @@ def update_html(events):
             to {{ opacity: 1; transform: translateY(0); }}
         }}
         
-        .category {{
-            margin-bottom: 30px;
-        }}
-        
-        .category-title {{
-            font-size: 17px;
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 15px;
-            padding-left: 12px;
-            border-left: 4px solid #667eea;
-        }}
-        
-        .card {{
+        .event-card {{
+            display: flex;
             background: white;
-            border-radius: 10px;
-            padding: 16px;
             margin-bottom: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            transition: all 0.2s;
-            border: 1px solid #f0f0f0;
+            border-radius: 8px;
+            border: 1px solid #FFE0B2;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
         }}
         
-        .card:active {{
+        .event-card:active {{
             transform: scale(0.98);
-            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
         }}
         
-        .card-date {{
-            color: #667eea;
+        .event-date {{
+            background: #FFF3E0;
+            color: var(--main);
+            width: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-weight: bold;
-            font-size: 15px;
-            margin-bottom: 8px;
+            border-right: 1px solid #FFE0B2;
+            font-size: 14px;
         }}
         
-        .card-title {{
-            font-size: 14px;
-            margin-bottom: 8px;
-            line-height: 1.5;
+        .event-details {{
+            flex: 1;
+            padding: 15px;
+        }}
+        
+        .event-title {{
+            font-size: 15px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            line-height: 1.4;
             color: #222;
         }}
         
-        .card-meta {{
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 8px;
-        }}
-        
-        .card-link {{
-            display: inline-block;
+        .event-actions {{
             margin-top: 8px;
-            color: #667eea;
-            text-decoration: none;
-            font-size: 13px;
-            font-weight: 500;
         }}
         
-        .card-link:hover {{
-            text-decoration: underline;
+        .btn {{
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }}
+        
+        .btn-info {{
+            border: 1px solid var(--main);
+            color: var(--main);
+            background: white;
+        }}
+        
+        .btn-info:hover {{
+            background: var(--main);
+            color: white;
+        }}
+        
+        .btn-result {{
+            background: var(--main);
+            color: white;
+            border: 1px solid var(--main);
+        }}
+        
+        .btn-result:hover {{
+            background: #E07B00;
         }}
         
         .footer {{
-            text-align: center;
-            padding: 20px;
-            color: #999;
-            font-size: 11px;
-            background: white;
-            border-top: 1px solid #eee;
             position: fixed;
             bottom: 0;
-            left: 0;
-            right: 0;
+            width: 100%;
+            background: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 11px;
+            border-top: 1px solid #EEE;
+            color: #999;
         }}
         
         @media (min-width: 768px) {{
             .header h1 {{
-                font-size: 28px;
+                font-size: 32px;
             }}
-            .content {{
+            .section {{
                 padding: 20px;
             }}
         }}
@@ -391,52 +322,45 @@ def update_html(events):
 </head>
 <body>
     <div class="header">
-        <h1>🎾 福岡テニス情報</h1>
-        <div class="subtitle">筑紫野エリアの最新大会情報</div>
+        <h1>🎾 福岡テニス速報</h1>
+        <p>筑紫野エリアの大会・結果を自動収集</p>
     </div>
-
+    
     <div class="tabs">
-        <div class="tab active" onclick="switchTab('junior')">🎾 ジュニア</div>
-        <div class="tab" onclick="switchTab('adult')">🏆 一般</div>
+        <div class="tab active" onclick="switchTab('jr')">🎾 ジュニア</div>
+        <div class="tab" onclick="switchTab('ad')">🏆 一般・社会人</div>
     </div>
-
-    <div class="content">
-        <!-- ジュニアセクション -->
-        <div id="junior" class="section active">
-            <div class="category">
-                <div class="category-title">📅 ジュニア大会情報</div>
-                {junior_cards}
-            </div>
-        </div>
-
-        <!-- 一般セクション -->
-        <div id="adult" class="section">
-            <div class="category">
-                <div class="category-title">📅 一般大会情報</div>
-                {adult_cards}
-            </div>
-        </div>
+    
+    <div id="jr" class="section active">
+        {junior_html}
     </div>
-
+    
+    <div id="ad" class="section">
+        {adult_html}
+    </div>
+    
     <div class="footer">
-        最終更新: {update_time}<br>
-        自動更新システム稼働中 🤖
+        更新: {update_time} | テニスをにぎやかに！ 🎾
     </div>
-
+    
     <script>
-        function switchTab(tab) {{
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        function switchTab(id) {{
+            // タブ切替
+            document.querySelectorAll('.tab').forEach((t, i) => {{
+                t.classList.toggle('active', (i == 0 && id == 'jr') || (i == 1 && id == 'ad'));
+            }});
             
-            event.target.classList.add('active');
-            document.getElementById(tab).classList.add('active');
+            // セクション切替
+            document.querySelectorAll('.section').forEach(s => {{
+                s.classList.toggle('active', s.id == id);
+            }});
             
+            // スクロールをトップに
             window.scrollTo({{ top: 0, behavior: 'smooth' }});
         }}
     </script>
 </body>
-</html>
-"""
+</html>"""
     
     try:
         with open(HTML_FILE, "w", encoding="utf-8") as f:
@@ -506,60 +430,63 @@ def post_to_threads(text):
         print(f"❌ Threads投稿エラー: {e}")
 
 def main():
-    print("=" * 60)
-    print("🎾 福岡テニス情報収集システム v3.0")
-    print("=" * 60)
+    print("=" * 70)
+    print("🎾 福岡テニス情報収集システム v4.0 HYBRID")
+    print("=" * 70)
     
+    # 前回データ読込
     previous_data = load_previous_data()
     
-    current_data = {}
+    # 全イベントを格納
+    all_events = {"junior": [], "adult": []}
     new_items = []
     
     for site_name, url in SITES.items():
         print(f"\n📡 {site_name} をチェック中...")
-        data = scrape_site(url)
+        events = scrape_site(url)
         
-        if data:
-            current_data[site_name] = data
-            print(f"   ✓ {len(data.get('content', []))}件のコンテンツを取得")
+        if events:
+            # カテゴリ別に分類
+            for event in events:
+                all_events[event['category']].append(event)
             
             # 差分チェック（簡易版）
             if site_name not in previous_data:
-                new_items.append(f"【{site_name}】初回取得\n{url}")
+                new_items.append(f"【{site_name}】初回取得")
                 print(f"   🆕 初回データ取得")
     
-    save_data(current_data)
+    # データ保存
+    save_data({"筑紫野ローンテニスクラブ": {"events": all_events}})
     
-    print(f"\n📊 イベント情報を抽出中...")
-    events = extract_all_events(current_data)
-    
+    # HTML更新
     print(f"\n🌐 HTMLファイルを更新中...")
-    update_html(events)
+    print(f"🎾 ジュニア: {len(all_events['junior'])}件")
+    print(f"🏆 一般: {len(all_events['adult'])}件")
+    update_html(all_events)
     
-    if new_items or len(events.get("junior", [])) > 0 or len(events.get("adult", [])) > 0:
+    # 通知送信
+    if len(all_events.get("junior", [])) > 0 or len(all_events.get("adult", [])) > 0:
         print(f"\n✅ イベント情報を検出")
         
         # メール本文作成
-        email_body = f"""福岡テニス情報更新
+        email_body = f"""🎾 福岡テニス速報
 
-ジュニア: {len(events.get('junior', []))}件
-一般: {len(events.get('adult', []))}件
+ジュニア: {len(all_events.get('junior', []))}件
+一般: {len(all_events.get('adult', []))}件
 
 詳細: https://hiro-ito1.github.io/tennis-info/
 """
-        send_email("【福岡テニス情報】更新あり", email_body)
+        send_email("【福岡テニス速報】更新あり", email_body)
         
         # Threads投稿
-        threads_text = f"🎾 福岡テニス情報更新\n\nジュニア: {len(events.get('junior', []))}件\n一般: {len(events.get('adult', []))}件\n\n詳細: https://hiro-ito1.github.io/tennis-info/"
+        threads_text = f"🎾 福岡テニス速報\n\nジュニア: {len(all_events.get('junior', []))}件\n一般: {len(all_events.get('adult', []))}件\n\n詳細: https://hiro-ito1.github.io/tennis-info/"
         post_to_threads(threads_text)
     else:
         print(f"\n📭 イベント情報なし")
     
-    print("\n" + "=" * 60)
+    print("\n" + "=" * 70)
     print("✅ 処理完了！")
-    print("=" * 60)
-    print(f"\n📱 確認: {os.path.abspath(HTML_FILE)}")
-    print(f"   → ダブルクリックしてブラウザで開いてください\n")
+    print("=" * 70)
 
 if __name__ == "__main__":
     main()
