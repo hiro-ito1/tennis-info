@@ -1,23 +1,47 @@
-name: テニス情報収集
+name: 福岡テニス情報自動更新
 
 on:
   schedule:
+    # 毎朝8時（日本時間）= UTC 23時
     - cron: '0 23 * * *'
-  workflow_dispatch:
+  workflow_dispatch:  # 手動実行も可能
 
 jobs:
-  collect:
+  update:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.13'
-      - run: pip install requests beautifulsoup4
-      - run: python tennis_collector.py
-        env:
-          SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-          APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
-          RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
-          THREADS_TOKEN: ${{ secrets.THREADS_TOKEN }}
-          THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+    - name: チェックアウト
+      uses: actions/checkout@v3
+      
+    - name: Pythonセットアップ
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+        
+    - name: 依存関係インストール
+      run: |
+        pip install requests beautifulsoup4
+        
+    - name: 情報収集実行
+      env:
+        SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
+        APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
+        RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
+        THREADS_TOKEN: ${{ secrets.THREADS_TOKEN }}
+        THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+      run: |
+        python tennis_collector.py
+        
+    - name: 変更をコミット
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add index.html tennis_data.json
+        git diff --quiet && git diff --staged --quiet || git commit -m "🎾 自動更新: $(date +'%Y-%m-%d %H:%M')"
+        
+    - name: GitHubにプッシュ
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: main
