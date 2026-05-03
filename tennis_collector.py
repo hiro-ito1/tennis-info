@@ -28,20 +28,11 @@ THREADS_USER_ID = os.getenv("THREADS_USER_ID")
 
 # ===== 関数群 =====
 
-def load_previous_data():
-    """前回のデータを読み込み"""
-    if os.path.exists(DATA_FILE):
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-def save_data(data):
-    """データを保存"""
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
 def scrape_site(url):
-    """筑紫野ローンテニスクラブ専用：表形式から大会・結果を精密に抽出（Gemini版ロジック）"""
+    """
+    Claude版：広範囲力技抽出
+    サイト内の全テキスト要素から情報を網羅的に収集
+    """
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -50,40 +41,15 @@ def scrape_site(url):
         response.encoding = response.apparent_encoding
         soup = BeautifulSoup(response.text, "html.parser")
         
-        extracted_events = []
+        # 全テキスト要素を網羅的に取得（力技）
+        all_content = []
+        for tag in soup.find_all(['div', 'table', 'p', 'h1', 'h2', 'h3', 'h4', 'li', 'td', 'tr', 'span']):
+            text = tag.get_text(separator=' ', strip=True)
+            if text and len(text) > 10:
+                all_content.append(text)
         
-        # 表形式（tr）から抽出
-        for row in soup.find_all('tr'):
-            text = row.get_text(separator=' ', strip=True)
-            
-            # 日付パターンマッチ
-            date_match = re.search(r'(\d{1,2})月(\d{1,2})日', text)
-            if date_match:
-                # リンク取得
-                link_tag = row.find('a')
-                link_url = ""
-                if link_tag and link_tag.get('href'):
-                    link_url = requests.compat.urljoin(url, link_tag.get('href'))
-                
-                # 除外キーワード
-                ignore_keywords = ["休講", "定休日", "テニス教室", "スクール"]
-                if any(k in text for k in ignore_keywords):
-                    continue
-                
-                # 日付とタイトルを整形
-                event_date = f"{date_match.group(1)}/{date_match.group(2)}"
-                title = text.replace(date_match.group(0), "").strip()
-                title = re.sub(r'^[（\(].+?[\)）]', '', title).strip()
-                
-                extracted_events.append({
-                    "date": event_date,
-                    "title": title,
-                    "url": link_url,
-                    "category": classify_event(title)
-                })
-        
-        print(f"   ✓ {len(extracted_events)}件のイベントを抽出")
-        return extracted_events
+        print(f"   ✓ {len(all_content)}件のコンテンツブロックを取得")
+        return all_content
         
     except Exception as e:
         print(f"❌ 収集エラー: {e}")
@@ -93,9 +59,98 @@ def classify_event(text):
     """イベントを分類（ジュニア/一般）"""
     junior_keywords = ["ジュニア", "Jr", "jr", "小学生", "中学生", "高校生", 
                        "こども", "子ども", "キッズ", "ファーストステップ", 
-                       "ゴーゴーゴー", "ぽよよん", "チビ"]
+                       "ゴーゴーゴー", "ぽよよん", "チビ", "強化"]
     
-    return "junior" if any(k in text for k in junior_keywords) else "adult"
+    text_lower = text.lower()
+    for keyword in junior_keywords:
+        if keyword.lower() in text_lower:
+            return "junior"
+    return "adult"
+
+def extract_events_from_content(content_list, url, source_name):
+    """コンテンツからイベント情報を抽出"""
+    events = []
+    
+    # 大会・カップキーワード
+    event_keywords = ["大会", "カップ", "レッスン", "イベント", "試合", "結果", "募集"]
+    
+    # 日付パターン（複数対応）
+    date_patterns = [
+        r'(\d{1,2})/(\d{1,2})\(([月火水木金土日])\)',  # 5/17(日)
+        r'(\d{1,2})/(\d{1,2})',                        # 5/17
+        r'(\d{1,2})月(\d{1,2})日',                    # 5月17日
+    ]
+    
+    for text in content_list:
+        # イベント関連のキーワードが含まれているか
+        has_event_keyword = any(keyword in text for keyword in event_keywords)
+        
+        if not has_event_keyword:
+            continue
+        
+        # 日付を探す
+        date_found = None
+        for pattern in date_patterns:
+            match = re.search(pattern, text)
+            if match:
+                if len(match.groups()) >= 2:
+                    date_found = f"{match.group(1)}/{match.group(2)}"
+                break
+        
+        if date_found:
+            # タイトルを抽出
+            title = text.split('\n')[0][:100].strip()
+            
+            # 除外キーワード
+            ignore_keywords = ["休講", "定休日", "スクール生"]
+            if any(k in title for k in ignore_keywords):
+                continue
+            
+            event = {
+                "date": date_found,
+                "title": title,
+                "url": url,
+                "category": classify_event(text)
+            }
+            
+            events.append(event)
+    
+    return events
+
+def extract_all_events(content, url, site_name):
+    """全データからイベント情報を抽出"""
+    all_events = {"junior": [], "adult": []}
+    
+    events = extract_events_from_content(content, url, site_name)
+    
+    print(f"📊 {site_name}: {len(events)}件のイベントを抽出")
+    
+    # カテゴリ別に分類
+    for event in events:
+        category = event["category"]
+        all_events[category].append(event)
+    
+    # 重複削除
+    all_events["junior"] = remove_duplicates(all_events["junior"])
+    all_events["adult"] = remove_duplicates(all_events["adult"])
+    
+    print(f"🎾 ジュニア: {len(all_events['junior'])}件")
+    print(f"🏆 一般: {len(all_events['adult'])}件")
+    
+    return all_events
+
+def remove_duplicates(events):
+    """重複イベントを削除"""
+    seen = set()
+    unique_events = []
+    
+    for event in events:
+        key = (event["date"], event["title"][:30])
+        if key not in seen:
+            seen.add(key)
+            unique_events.append(event)
+    
+    return unique_events
 
 def generate_event_cards(events):
     """イベントカードのHTML生成（オレンジデザイン）"""
@@ -104,7 +159,6 @@ def generate_event_cards(events):
     
     html = ""
     for ev in events:
-        # 結果か要項かを判定
         link_label = "試合結果を見る" if any(x in ev['title'] for x in ["結果", "予選", "本戦"]) else "大会要項を見る"
         link_style = "btn-result" if "結果" in ev['title'] else "btn-info"
         
@@ -345,17 +399,14 @@ def update_html(events):
     
     <script>
         function switchTab(id) {{
-            // タブ切替
             document.querySelectorAll('.tab').forEach((t, i) => {{
                 t.classList.toggle('active', (i == 0 && id == 'jr') || (i == 1 && id == 'ad'));
             }});
             
-            // セクション切替
             document.querySelectorAll('.section').forEach(s => {{
                 s.classList.toggle('active', s.id == id);
             }});
             
-            // スクロールをトップに
             window.scrollTo({{ top: 0, behavior: 'smooth' }});
         }}
     </script>
@@ -365,16 +416,14 @@ def update_html(events):
     try:
         with open(HTML_FILE, "w", encoding="utf-8") as f:
             f.write(html_content)
-        print(f"✅ HTMLファイル更新完了: {HTML_FILE}")
-        print(f"   - ジュニア: {len(events.get('junior', []))}件")
-        print(f"   - 一般: {len(events.get('adult', []))}件")
+        print(f"✅ HTMLファイル更新完了")
     except Exception as e:
         print(f"❌ HTMLファイル保存エラー: {e}")
 
 def send_email(subject, body):
     """メール送信"""
     if not all([SENDER_EMAIL, APP_PASSWORD, RECEIVER_EMAIL]):
-        print("⚠️ メール設定が不完全です（ローカル実行時は正常）")
+        print("⚠️ メール設定が不完全です（環境変数未設定）")
         return
     
     try:
@@ -382,7 +431,7 @@ def send_email(subject, body):
         msg["From"] = SENDER_EMAIL
         msg["To"] = RECEIVER_EMAIL
         msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain"))
+        msg.attach(MIMEText(body, "plain", "utf-8"))
         
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(SENDER_EMAIL, APP_PASSWORD)
@@ -395,7 +444,7 @@ def send_email(subject, body):
 def post_to_threads(text):
     """Threadsに投稿"""
     if not all([THREADS_TOKEN, THREADS_USER_ID]):
-        print("⚠️ Threads設定が不完全です（ローカル実行時は正常）")
+        print("⚠️ Threads設定が不完全です（環境変数未設定）")
         return
     
     try:
@@ -406,10 +455,11 @@ def post_to_threads(text):
             "access_token": THREADS_TOKEN
         }
         response = requests.post(url, params=params)
-        container_id = response.json().get("id")
+        response_data = response.json()
+        container_id = response_data.get("id")
         
         if not container_id:
-            print(f"❌ コンテナ作成失敗: {response.text}")
+            print(f"❌ Threadsコンテナ作成失敗")
             return
         
         time.sleep(2)
@@ -424,65 +474,56 @@ def post_to_threads(text):
         if publish_response.status_code == 200:
             print("✅ Threads投稿成功")
         else:
-            print(f"❌ Threads投稿エラー: {publish_response.text}")
+            print(f"❌ Threads投稿エラー")
             
     except Exception as e:
         print(f"❌ Threads投稿エラー: {e}")
 
 def main():
     print("=" * 70)
-    print("🎾 福岡テニス情報収集システム v4.0 HYBRID")
+    print("🎾 福岡テニス情報収集システム v4.2 ULTIMATE")
     print("=" * 70)
     
-    # 前回データ読込
-    previous_data = load_previous_data()
-    
-    # 全イベントを格納
     all_events = {"junior": [], "adult": []}
-    new_items = []
     
     for site_name, url in SITES.items():
         print(f"\n📡 {site_name} をチェック中...")
-        events = scrape_site(url)
+        content = scrape_site(url)
         
-        if events:
-            # カテゴリ別に分類
-            for event in events:
-                all_events[event['category']].append(event)
-            
-            # 差分チェック（簡易版）
-            if site_name not in previous_data:
-                new_items.append(f"【{site_name}】初回取得")
-                print(f"   🆕 初回データ取得")
-    
-    # データ保存
-    save_data({"筑紫野ローンテニスクラブ": {"events": all_events}})
+        if content:
+            events = extract_all_events(content, url, site_name)
+            all_events["junior"].extend(events["junior"])
+            all_events["adult"].extend(events["adult"])
     
     # HTML更新
     print(f"\n🌐 HTMLファイルを更新中...")
-    print(f"🎾 ジュニア: {len(all_events['junior'])}件")
-    print(f"🏆 一般: {len(all_events['adult'])}件")
     update_html(all_events)
     
     # 通知送信
-    if len(all_events.get("junior", [])) > 0 or len(all_events.get("adult", [])) > 0:
-        print(f"\n✅ イベント情報を検出")
+    total_events = len(all_events["junior"]) + len(all_events["adult"])
+    
+    if total_events > 0:
+        print(f"\n📢 通知を送信中... (合計{total_events}件)")
         
-        # メール本文作成
         email_body = f"""🎾 福岡テニス速報
 
-ジュニア: {len(all_events.get('junior', []))}件
-一般: {len(all_events.get('adult', []))}件
+ジュニア: {len(all_events['junior'])}件
+一般: {len(all_events['adult'])}件
 
 詳細: https://hiro-ito1.github.io/tennis-info/
 """
-        send_email("【福岡テニス速報】更新あり", email_body)
+        send_email("【福岡テニス速報】最新情報", email_body)
         
-        # Threads投稿
-        threads_text = f"🎾 福岡テニス速報\n\nジュニア: {len(all_events.get('junior', []))}件\n一般: {len(all_events.get('adult', []))}件\n\n詳細: https://hiro-ito1.github.io/tennis-info/"
+        threads_text = f"""🎾 福岡テニス速報
+
+ジュニア: {len(all_events['junior'])}件
+一般: {len(all_events['adult'])}件
+
+https://hiro-ito1.github.io/tennis-info/"""
+        
         post_to_threads(threads_text)
     else:
-        print(f"\n📭 イベント情報なし")
+        print(f"\n📭 イベント情報が取得できませんでした")
     
     print("\n" + "=" * 70)
     print("✅ 処理完了！")
