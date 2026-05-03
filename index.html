@@ -3,9 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>福岡テニス情報 - 最新大会情報</title>
+    <title>福岡テニス速報</title>
     <meta name="description" content="福岡・筑紫野エリアのテニス大会情報を自動収集・配信">
     <style>
+        :root {
+            --main: #FF8C00;
+            --sub: #FFD700;
+            --bg: #FFFBF5;
+        }
+        
         * {
             margin: 0;
             padding: 0;
@@ -14,70 +20,67 @@
         
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
-            background: #f5f5f5;
+            background: var(--bg);
+            margin: 0;
             color: #333;
-            line-height: 1.6;
+            padding-bottom: 80px;
         }
         
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, var(--main), var(--sub));
             color: white;
-            padding: 20px 15px;
+            padding: 25px 15px;
             text-align: center;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
         
         .header h1 {
-            font-size: 22px;
+            font-size: 24px;
             margin-bottom: 8px;
             font-weight: 600;
         }
         
-        .header .subtitle {
+        .header p {
             font-size: 13px;
-            opacity: 0.9;
+            opacity: 0.95;
         }
         
         .tabs {
             display: flex;
             background: white;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
             position: sticky;
             top: 0;
+            border-bottom: 2px solid #EEE;
             z-index: 100;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
         }
         
         .tab {
             flex: 1;
             padding: 15px;
             text-align: center;
+            font-weight: bold;
+            color: #777;
             cursor: pointer;
-            border-bottom: 3px solid transparent;
             transition: all 0.3s;
-            font-size: 15px;
-            background: white;
+            border-bottom: 4px solid transparent;
         }
         
         .tab.active {
-            border-bottom-color: #667eea;
-            color: #667eea;
-            font-weight: bold;
-            background: #f8f9ff;
+            color: var(--main);
+            border-bottom-color: var(--main);
+            background: #FFF9F0;
         }
         
         .tab:hover {
-            background: #f8f9ff;
-        }
-        
-        .content {
-            padding: 15px;
-            max-width: 600px;
-            margin: 0 auto;
-            padding-bottom: 60px;
+            background: #FFF9F0;
         }
         
         .section {
             display: none;
+            padding: 15px;
+            max-width: 600px;
+            margin: 0 auto;
         }
         
         .section.active {
@@ -90,85 +93,98 @@
             to { opacity: 1; transform: translateY(0); }
         }
         
-        .category {
-            margin-bottom: 30px;
-        }
-        
-        .category-title {
-            font-size: 17px;
-            font-weight: bold;
-            color: #667eea;
-            margin-bottom: 15px;
-            padding-left: 12px;
-            border-left: 4px solid #667eea;
-        }
-        
-        .card {
+        .event-card {
+            display: flex;
             background: white;
-            border-radius: 10px;
-            padding: 16px;
             margin-bottom: 12px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            transition: all 0.2s;
-            border: 1px solid #f0f0f0;
+            border-radius: 8px;
+            border: 1px solid #FFE0B2;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
         }
         
-        .card:active {
+        .event-card:active {
             transform: scale(0.98);
-            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
         }
         
-        .card-date {
-            color: #667eea;
+        .event-date {
+            background: #FFF3E0;
+            color: var(--main);
+            width: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-weight: bold;
-            font-size: 15px;
-            margin-bottom: 8px;
+            border-right: 1px solid #FFE0B2;
+            font-size: 14px;
         }
         
-        .card-title {
-            font-size: 14px;
-            margin-bottom: 8px;
-            line-height: 1.5;
+        .event-details {
+            flex: 1;
+            padding: 15px;
+        }
+        
+        .event-title {
+            font-size: 15px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            line-height: 1.4;
             color: #222;
         }
         
-        .card-meta {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 8px;
-        }
-        
-        .card-link {
-            display: inline-block;
+        .event-actions {
             margin-top: 8px;
-            color: #667eea;
-            text-decoration: none;
-            font-size: 13px;
-            font-weight: 500;
         }
         
-        .card-link:hover {
-            text-decoration: underline;
+        .btn {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        
+        .btn-info {
+            border: 1px solid var(--main);
+            color: var(--main);
+            background: white;
+        }
+        
+        .btn-info:hover {
+            background: var(--main);
+            color: white;
+        }
+        
+        .btn-result {
+            background: var(--main);
+            color: white;
+            border: 1px solid var(--main);
+        }
+        
+        .btn-result:hover {
+            background: #E07B00;
         }
         
         .footer {
-            text-align: center;
-            padding: 20px;
-            color: #999;
-            font-size: 11px;
-            background: white;
-            border-top: 1px solid #eee;
             position: fixed;
             bottom: 0;
-            left: 0;
-            right: 0;
+            width: 100%;
+            background: white;
+            padding: 15px;
+            text-align: center;
+            font-size: 11px;
+            border-top: 1px solid #EEE;
+            color: #999;
         }
         
         @media (min-width: 768px) {
             .header h1 {
-                font-size: 28px;
+                font-size: 32px;
             }
-            .content {
+            .section {
                 padding: 20px;
             }
         }
@@ -176,179 +192,40 @@
 </head>
 <body>
     <div class="header">
-        <h1>🎾 福岡テニス情報</h1>
-        <div class="subtitle">筑紫野エリアの最新大会情報</div>
+        <h1>🎾 福岡テニス速報</h1>
+        <p>筑紫野エリアの大会・結果を自動収集</p>
     </div>
-
+    
     <div class="tabs">
-        <div class="tab active" onclick="switchTab('junior')">🎾 ジュニア</div>
-        <div class="tab" onclick="switchTab('adult')">🏆 一般</div>
+        <div class="tab active" onclick="switchTab('jr')">🎾 ジュニア</div>
+        <div class="tab" onclick="switchTab('ad')">🏆 一般・社会人</div>
     </div>
-
-    <div class="content">
-        <!-- ジュニアセクション -->
-        <div id="junior" class="section active">
-            <div class="category">
-                <div class="category-title">📅 ジュニア大会情報</div>
-                
-                <div class="card">
-                    <div class="card-date">5/17</div>
-                    <div class="card-title">テニスクラブからのお知らせ CONTACT お問い合わせは メールフォームを ご利用ください お問い合わせフォーム メールフォームをご利用いただければ 12時間...</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/17</div>
-                    <div class="card-title">イベント参加者募集中 FUN EVENTS 手ぶらでおいでよ！初めてのテニス ”本物コーチ”は何かが違う！ 【初心者の新小１～６年対象】 日程：5/17(日) ...</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/17</div>
-                    <div class="card-title">試合やってみようよ！ 補助がつくので安心♪ 筑紫野ローンテニスクラブ以外のジュニアも大歓迎！！ 今後の予定(ファーストステップ)： 5/17 今後の予定(ゴーゴ...</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/18</div>
-                    <div class="card-title">試合結果 Results ゑびすカップ(3月)入賞者 今後の予定： 5/18(月)･6/15(月) ぽよよん大会(4月)入賞者 ぽよよん大会について ←クリック...</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/17</div>
-                    <div class="card-title">イベント情報 ご参加お待ちしております 木曜１８：００～１９：２０ 高校生爆進テニス（中３～高校生） ソフトテニスからの転身又はテニス経験者向け 5/17(日)...</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/17</div>
-                    <div class="card-title">5/17(日) 初心者ジュニアレッスン（新１～６年小学生） 手ぶらでおいでよ！初めてのテニス”本物コーチ”は何かが違う！</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/17</div>
-                    <div class="card-title">5/17(日) 初心者ジュニアレッスン（新１～６年小学生）</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/3</div>
-                    <div class="card-title">5/3･5/24(全て日曜日) ゴーゴーゴー大会 試合をやろうよ！！初中級～チビ強化（１面＆上からサーブ）</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/3</div>
-                    <div class="card-title">5/3･5/24(全て日曜日) ゴーゴーゴー大会</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/17</div>
-                    <div class="card-title">5/17(日) ファーストステップ大会 試合をやろうよ！！初心者～初中級（半面）</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/17</div>
-                    <div class="card-title">5/17(日) ファーストステップ大会</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">26/4</div>
-                    <div class="card-title">★SMILE★ Congratulations!! 小学生ぽよよん大会(2026/4/29)入賞者 小学生ぽよよん大会(2026/3/20)入賞者 小学生ぽよよ...</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">26/4</div>
-                    <div class="card-title">小学生ぽよよん大会(2026/4/29)入賞者 小学生ぽよよん大会(2026/3/20)入賞者 小学生ぽよよん大会(2026/2/23)入賞者 小学生ぽよよん大...</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">26/4</div>
-                    <div class="card-title">小学生ぽよよん大会(2026/4/29)入賞者</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">26/3</div>
-                    <div class="card-title">小学生ぽよよん大会(2026/3/20)入賞者</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-            </div>
-        </div>
-
-        <!-- 一般セクション -->
-        <div id="adult" class="section">
-            <div class="category">
-                <div class="category-title">📅 一般大会情報</div>
-                
-                <div class="card">
-                    <div class="card-date">5/18</div>
-                    <div class="card-title">ゑびす醤油カップ 【大人女子ダブルス】 大会詳細 今後の予定：</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/18</div>
-                    <div class="card-title">※新規の方とのペアは先行エントリーができます ※二人とも参加歴のあるペアのエントリーについては、前の大会終了日の21時より開始します （5/18は4/20の21...</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/18</div>
-                    <div class="card-title">ゑびすカップ(3月)入賞者 今後の予定： 5/18(月)･6/15(月)</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-                <div class="card">
-                    <div class="card-date">5/18</div>
-                    <div class="card-title">5/18(月)･6/15(月) ゑびす醤油カップ（大人女子ダブルス） B級以下～D級・試合に出ている人・挑戦している人 【大人対象】</div>
-                    <div class="card-meta">筑紫野ローンテニスクラブ</div>
-                    <a href="https://chikushinotennis.web.fc2.com/" class="card-link" target="_blank">詳細を見る →</a>
-                </div>
-
-            </div>
-        </div>
+    
+    <div id="jr" class="section active">
+        <div style="text-align:center; padding:40px; color:#999;">現在、新しい情報はありません。</div>
     </div>
-
+    
+    <div id="ad" class="section">
+        <div style="text-align:center; padding:40px; color:#999;">現在、新しい情報はありません。</div>
+    </div>
+    
     <div class="footer">
-        最終更新: 2026年05月03日 00:53<br>
-        自動更新システム稼働中 🤖
+        更新: 2026/05/03 05:58 | テニスをにぎやかに！ 🎾
     </div>
-
+    
     <script>
-        function switchTab(tab) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+        function switchTab(id) {
+            // タブ切替
+            document.querySelectorAll('.tab').forEach((t, i) => {
+                t.classList.toggle('active', (i == 0 && id == 'jr') || (i == 1 && id == 'ad'));
+            });
             
-            event.target.classList.add('active');
-            document.getElementById(tab).classList.add('active');
+            // セクション切替
+            document.querySelectorAll('.section').forEach(s => {
+                s.classList.toggle('active', s.id == id);
+            });
             
+            // スクロールをトップに
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
     </script>
