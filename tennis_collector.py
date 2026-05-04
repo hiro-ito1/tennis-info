@@ -218,10 +218,12 @@ def extract_events_from_content(content_list, default_url, source_name):
 
     event_keywords = ["大会", "カップ", "レッスン", "イベント", "試合", "結果", "募集"]
 
+    # 日付パターン
+    # ★ 重要: 「2026/4/29」のような年/月/日形式を先に除去してから月/日を抽出する
     date_patterns = [
-        r"(\d{1,2})/(\d{1,2})\([月火水木金土日]\)",  # 5/17(日) ← 曜日付きを先に試す
-        r"(\d{1,2})/(\d{1,2})",                      # 5/17
+        r"(\d{1,2})/(\d{1,2})\([月火水木金土日]\)",  # 5/17(日) 曜日付き（最優先）
         r"(\d{1,2})月(\d{1,2})日",                   # 5月17日
+        r"(?<!\d)(\d{1,2})/(\d{1,2})(?!\d|/)",      # 5/17（前後に数字や/がないもの）
     ]
 
     for item in content_list:
@@ -231,19 +233,37 @@ def extract_events_from_content(content_list, default_url, source_name):
         if not any(kw in text for kw in event_keywords):
             continue
 
+        # ★ バグ修正: 年/月/日形式（2026/4/29）を先にテキストから除去して誤抽出を防ぐ
+        text_for_date = re.sub(r"\d{4}/\d{1,2}/\d{1,2}", "", text)
+
         date_found = None
         for pattern in date_patterns:
-            match = re.search(pattern, text)
+            match = re.search(pattern, text_for_date)
             if match:
-                date_found = f"{match.group(1)}/{match.group(2)}"
-                break
+                m, d = int(match.group(1)), int(match.group(2))
+                # 月として妥当な範囲（1〜12）かチェック
+                if 1 <= m <= 12 and 1 <= d <= 31:
+                    date_found = f"{m}/{d}"
+                    break
 
         if not date_found:
             continue
 
-        # 古いデータは除外（現在年の1月より前）
-        if is_past_date(date_found):
+        # 結果報告かどうか先に判定（フィルタリング方針に使う）
+        event_type_check = classify_event_type(text)
+
+        # ★ 方針変更: 「結果報告」は年に関係なく残す。「大会募集」のみ古いものを除外。
+        if event_type_check != "result" and is_past_date(date_found):
             continue
+
+        # ★ 結果報告の場合：本文中の「2026/4/29」形式を正しい月/日として使う
+        #    （「26/4」誤抽出を上書き修正）
+        if event_type_check == "result":
+            full_date_match = re.search(r"\d{4}/(\d{1,2})/(\d{1,2})", text)
+            if full_date_match:
+                fm, fd = int(full_date_match.group(1)), int(full_date_match.group(2))
+                if 1 <= fm <= 12 and 1 <= fd <= 31:
+                    date_found = f"{fm}/{fd}"
 
         # 曜日を自動付与
         date_with_weekday = add_weekday(date_found)
@@ -256,14 +276,18 @@ def extract_events_from_content(content_list, default_url, source_name):
         if any(k in title for k in skip_title_keywords):
             continue
 
+        # ★ リンクが404エラー系なら対象サイトのトップへフォールバック
+        if "404" in link or "error.fc2" in link.lower():
+            link = default_url
+
         # イベントタイプ判定してラベルを付与
-        event_type = classify_event_type(title)
+        event_type = event_type_check
         label = "【結果報告】" if event_type == "result" else "【大会募集】"
         display_title = f"{label} {title}"
 
         events.append({
-            "date": date_found,          # ソートなどに使う生データ
-            "date_display": date_with_weekday,  # 表示用（曜日付き）
+            "date": date_found,
+            "date_display": date_with_weekday,
             "title": display_title,
             "url": link,
             "category": classify_event(text),
