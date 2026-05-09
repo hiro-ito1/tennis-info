@@ -1,696 +1,526 @@
-import requests
-from bs4 import BeautifulSoup
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+🎾 福岡テニス速報システム v9.0 ULTIMATE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 新機能:
+✅ 未来（試合要項）: オレンジ系・昇順
+✅ 過去（試合結果）: 青系・降順
+✅ セパレーターで明確分離
+✅ GitHub/Threads自動投稿対応
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
 import json
 import os
-from datetime import datetime, date
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from urllib.parse import urlparse, urljoin
-import time
-import re
+from datetime import date, datetime
+from pathlib import Path
 
-# ===== 設定 =====
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# [1] 設定
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+BASE_DIR = r"C:\Users\tenni\tennis-info"
+EVENTS_FILE = os.path.join(BASE_DIR, "events.json")
+PUBLIC_DIR = os.path.join(BASE_DIR, "public")
+INDEX_HTML = os.path.join(PUBLIC_DIR, "index.html")
+
+# 主催者URL
 SITES = {
     "筑紫野ローンテニスクラブ": "https://chikushinotennis.web.fc2.com/",
+    "ITS九州": "https://its-kyushu.com/",
+    "福岡パシフィックテニスアカデミー": "http://www.sp-fukuoka.com/",
+    "城南テニスクラブ": "https://jonantennis.net/"
 }
 
-DATA_FILE = "tennis_data.json"
-HTML_FILE = "index.html"
-BLACKLIST_FILE = "blacklist.txt"
-
-# メール設定（環境変数から取得）
-SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-APP_PASSWORD = os.getenv("APP_PASSWORD")
-RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
-
-# Threads設定（環境変数から取得）
-THREADS_TOKEN = os.getenv("THREADS_TOKEN")
-THREADS_USER_ID = os.getenv("THREADS_USER_ID")
-
-# ===== 曜日マップ =====
-WEEKDAY_JP = ["月", "火", "水", "木", "金", "土", "日"]
-
-# ===== NGキーワード（スクレイピング段階で除外）=====
-# ★「ファーストステップ」「ぽよよん」はここから削除 → classify_event側でジュニア判定に使用
-NG_KEYWORDS = [
-    "休講", "定休日", "スクール生",
-    "初心者ジュニアレッスン", "爆進テニス",
-    "手ぶらでおいでよ", "通常レッスン",
-    "ご参加お待ちしております",
-    "木曜１８：００", "木曜18:00",
-    "今後の予定：",
-    "入賞者 今後の予定",
-    "先行エントリーができます",
-]
-
-# ===== レッスン除外ワード（NGキーワードとの組み合わせで柔軟に判定）=====
-LESSON_CONTEXT_KEYWORDS = ["レッスン", "スクール", "練習会", "講習"]
-
-
-# ===== 関数群 =====
-
-def load_blacklist():
-    """blacklist.txtを読み込む（なければ空リスト）"""
-    if not os.path.exists(BLACKLIST_FILE):
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# [2] admin.py が呼び出す関数
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def load_events():
+    """
+    events.json を読み込んで返す
+    admin.py の rebuild_html() から呼ばれる
+    """
+    if not os.path.exists(EVENTS_FILE):
         return []
+    
     try:
-        with open(BLACKLIST_FILE, "r", encoding="utf-8") as f:
-            lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
-        print(f"📋 ブラックリスト読み込み: {len(lines)}件")
-        return lines
+        with open(EVENTS_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
     except Exception as e:
-        print(f"⚠️ ブラックリスト読み込みエラー: {e}")
+        print(f"エラー: events.json 読み込み失敗: {e}")
         return []
 
 
-def apply_blacklist(events, blacklist):
-    """ブラックリストに一致するイベントを除外"""
-    if not blacklist:
-        return events
-    filtered = []
-    for ev in events:
-        hit = any(word in ev["title"] for word in blacklist)
-        if hit:
-            print(f"🚫 ブラックリスト除外: {ev['title'][:40]}")
-        else:
-            filtered.append(ev)
-    return filtered
-
-
-def is_lesson_only(text):
+def update_html(approved_events):
     """
-    「ファーストステップ」「ぽよよん」単体は大会名の可能性がある。
-    レッスン文脈のワードと一緒に出てくる場合のみ除外する。
+    承認済みイベントから index.html を生成
+    admin.py の rebuild_html() から呼ばれる
+    
+    Args:
+        approved_events: status が "approved" のイベントリスト
     """
-    soft_ng = ["ファーストステップ", "ぽよよん"]
-    for word in soft_ng:
-        if word in text:
-            # レッスン系ワードと同時に含む場合だけ除外
-            if any(lw in text for lw in LESSON_CONTEXT_KEYWORDS):
-                return True
-    return False
-
-
-def add_weekday(date_str):
-    """
-    「5/18」→「5/18(月)」に変換する。
-    年は現在年を使用。12月に翌年1月分を表示しても対応できるよう考慮。
-    """
-    try:
-        now = datetime.now()
-        month, day = map(int, date_str.split("/"))
-        year = now.year
-        # 現在月より大幅に小さい月（例：現在12月なのに1月）は翌年と判断
-        if now.month >= 10 and month <= 3:
-            year += 1
-        d = date(year, month, day)
-        weekday = WEEKDAY_JP[d.weekday()]
-        return f"{month}/{day}({weekday})"
-    except Exception:
-        return date_str  # 変換失敗時はそのまま返す
-
-
-def is_past_date(date_str):
-    """
-    現在年より前（2026年1月より前）のデータは除外する。
-    「5/18」形式の場合、現在年を基準に判定。
-    """
-    try:
-        now = datetime.now()
-        month, day = map(int, date_str.split("/"))
-        year = now.year
-        if now.month >= 10 and month <= 3:
-            year += 1
-        target = date(year, month, day)
-        cutoff = date(now.year, 1, 1)  # 現在年の1月1日を下限
-        return target < cutoff
-    except Exception:
-        return False  # 判定できない場合は除外しない
-
-
-def resolve_url(href, base_url):
-    """相対URLや//で始まるURLを絶対URLに変換"""
-    if not href:
-        return base_url
-    return urljoin(base_url, href)
-
-
-def classify_event(text):
-    """イベントを分類（ジュニア/一般）"""
-    junior_keywords = [
-        "ジュニア", "Jr", "jr", "小学生", "中学生", "高校生",
-        "こども", "子ども", "キッズ", "ファーストステップ",
-        "ゴーゴーゴー", "ぽよよん", "チビ", "強化",
-    ]
-    text_lower = text.lower()
-    for keyword in junior_keywords:
-        if keyword.lower() in text_lower:
+    # public ディレクトリ作成
+    os.makedirs(PUBLIC_DIR, exist_ok=True)
+    
+    # イベントを日付順にソート
+    def parse_date(ev):
+        try:
+            date_str = ev['date'].split('(')[0]  # "2026/5/17(日)" → "2026/5/17"
+            y, m, d = map(int, date_str.split('/'))
+            return date(y, m, d)
+        except:
+            return date(2099, 12, 31)
+    
+    # 今日の日付
+    today = date.today()
+    
+    # 未来と過去に分類
+    future_events = [e for e in approved_events if parse_date(e) >= today]
+    past_events = [e for e in approved_events if parse_date(e) < today]
+    
+    # 未来: 昇順（近い順）、過去: 降順（新しい順）
+    future_events.sort(key=parse_date)
+    past_events.sort(key=parse_date, reverse=True)
+    
+    # カテゴリ別に分類
+    def normalize_category(cat):
+        if cat in ["ジュニア", "junior"]:
             return "junior"
-    return "adult"
-
-
-def classify_event_type(title):
-    """
-    イベントタイプを分類して表示ラベルを返す
-    「結果」「優勝」「スコア」→【結果報告】
-    それ以外→【大会募集】
-    """
-    result_keywords = ["結果", "優勝", "スコア", "入賞", "順位", "報告"]
-    for kw in result_keywords:
-        if kw in title:
-            return "result"
-    return "entry"
-
-
-def scrape_site(url):
-    """
-    サイト内の全テキスト要素＋リンクを収集
-    NGキーワードを含むブロックは即時除外
-    """
+        elif cat in ["一般", "adult"]:
+            return "adult"
+        return "other"
+    
+    # 未来（ジュニア/一般）
+    future_junior = [e for e in future_events if normalize_category(e.get('category')) == 'junior']
+    future_adult = [e for e in future_events if normalize_category(e.get('category')) == 'adult']
+    
+    # 過去（ジュニア/一般）
+    past_junior = [e for e in past_events if normalize_category(e.get('category')) == 'junior']
+    past_adult = [e for e in past_events if normalize_category(e.get('category')) == 'adult']
+    
+    # HTML生成
+    html_content = generate_html(future_junior, future_adult, past_junior, past_adult)
+    
+    # ファイル書き込み
     try:
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        }
-        response = requests.get(url, timeout=15, headers=headers)
-        response.encoding = response.apparent_encoding
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        all_content = []
-        for tag in soup.find_all(["div", "table", "p", "h1", "h2", "h3", "h4", "li", "td", "tr", "span"]):
-            text = tag.get_text(separator=" ", strip=True)
-            if not text or len(text) < 10:
-                continue
-
-            # ハードNGキーワード除外
-            if any(ng in text for ng in NG_KEYWORDS):
-                continue
-
-            # ソフトNG（ファーストステップ・ぽよよん＋レッスン文脈）除外
-            if is_lesson_only(text):
-                continue
-
-            # リンクを絶対URLに変換（urljoinで完全対応）
-            link = url
-            a_tag = tag.find("a", href=True)
-            if a_tag:
-                link = resolve_url(a_tag["href"], url)
-
-            all_content.append({"text": text, "link": link})
-
-        print(f"   ✓ {len(all_content)}件のコンテンツブロックを取得（NG除外後）")
-        return all_content
-
+        with open(INDEX_HTML, 'w', encoding='utf-8') as f:
+            f.write(html_content)
+        print(f"✅ HTML生成成功: {INDEX_HTML}")
+        print(f"   未来 - ジュニア: {len(future_junior)}件 / 一般: {len(future_adult)}件")
+        print(f"   過去 - ジュニア: {len(past_junior)}件 / 一般: {len(past_adult)}件")
     except Exception as e:
-        print(f"❌ 収集エラー: {e}")
-        return []
+        print(f"❌ HTML生成失敗: {e}")
 
 
-def extract_events_from_content(content_list, default_url, source_name):
-    """コンテンツからイベント情報を抽出"""
-    events = []
-
-    event_keywords = ["大会", "カップ", "レッスン", "イベント", "試合", "結果", "募集"]
-
-    # 日付パターン
-    # ★ 重要: 「2026/4/29」のような年/月/日形式を先に除去してから月/日を抽出する
-    date_patterns = [
-        r"(\d{1,2})/(\d{1,2})\([月火水木金土日]\)",  # 5/17(日) 曜日付き（最優先）
-        r"(\d{1,2})月(\d{1,2})日",                   # 5月17日
-        r"(?<!\d)(\d{1,2})/(\d{1,2})(?!\d|/)",      # 5/17（前後に数字や/がないもの）
-    ]
-
-    for item in content_list:
-        text = item["text"]
-        link = item["link"]
-
-        if not any(kw in text for kw in event_keywords):
-            continue
-
-        # ★ バグ修正: 年/月/日形式（2026/4/29）を先にテキストから除去して誤抽出を防ぐ
-        text_for_date = re.sub(r"\d{4}/\d{1,2}/\d{1,2}", "", text)
-
-        date_found = None
-        for pattern in date_patterns:
-            match = re.search(pattern, text_for_date)
-            if match:
-                m, d = int(match.group(1)), int(match.group(2))
-                # 月として妥当な範囲（1〜12）かチェック
-                if 1 <= m <= 12 and 1 <= d <= 31:
-                    date_found = f"{m}/{d}"
-                    break
-
-        if not date_found:
-            continue
-
-        # 結果報告かどうか先に判定（フィルタリング方針に使う）
-        event_type_check = classify_event_type(text)
-
-        # ★ 方針変更: 「結果報告」は年に関係なく残す。「大会募集」のみ古いものを除外。
-        if event_type_check != "result" and is_past_date(date_found):
-            continue
-
-        # ★ 結果報告の場合：本文中の「2026/4/29」形式を正しい月/日として使う
-        #    （「26/4」誤抽出を上書き修正）
-        if event_type_check == "result":
-            full_date_match = re.search(r"\d{4}/(\d{1,2})/(\d{1,2})", text)
-            if full_date_match:
-                fm, fd = int(full_date_match.group(1)), int(full_date_match.group(2))
-                if 1 <= fm <= 12 and 1 <= fd <= 31:
-                    date_found = f"{fm}/{fd}"
-
-        # 曜日を自動付与
-        date_with_weekday = add_weekday(date_found)
-
-        # タイトル：1行目の先頭100文字、余分な空白を除去
-        title = re.sub(r"\s+", " ", text.split("\n")[0]).strip()[:100]
-
-        # タイトルレベルの追加除外
-        skip_title_keywords = ["休講", "定休日", "スクール生", "今後の予定"]
-        if any(k in title for k in skip_title_keywords):
-            continue
-
-        # ★ リンクが404エラー系なら対象サイトのトップへフォールバック
-        if "404" in link or "error.fc2" in link.lower():
-            link = default_url
-
-        # イベントタイプ判定してラベルを付与
-        event_type = event_type_check
-        label = "【結果報告】" if event_type == "result" else "【大会募集】"
-        display_title = f"{label} {title}"
-
-        events.append({
-            "date": date_found,
-            "date_display": date_with_weekday,
-            "title": display_title,
-            "url": link,
-            "category": classify_event(text),
-            "event_type": event_type,
-        })
-
-    return events
-
-
-def remove_duplicates(events):
-    """
-    重複削除（強化版）
-    「同じ日付」かつ「タイトル先頭5文字が一致」→ 重複とみなす
-    「結果」を含む方を優先して残す
-    """
-    groups = {}
-    for ev in events:
-        # ラベルを除いた本来のタイトル部分で比較
-        title_core = ev["title"].replace("【結果報告】 ", "").replace("【大会募集】 ", "")
-        key = (ev["date"], title_core[:5])
-        if key not in groups:
-            groups[key] = []
-        groups[key].append(ev)
-
-    unique_events = []
-    for key, group in groups.items():
-        if len(group) == 1:
-            unique_events.append(group[0])
-        else:
-            result_events = [e for e in group if e["event_type"] == "result"]
-            unique_events.append(result_events[0] if result_events else group[0])
-
-    return unique_events
-
-
-def extract_all_events(content, url, site_name):
-    """全データからイベント情報を抽出・分類"""
-    all_events = {"junior": [], "adult": []}
-
-    events = extract_events_from_content(content, url, site_name)
-    print(f"📊 {site_name}: 抽出 {len(events)}件")
-
-    for event in events:
-        all_events[event["category"]].append(event)
-
-    all_events["junior"] = remove_duplicates(all_events["junior"])
-    all_events["adult"] = remove_duplicates(all_events["adult"])
-
-    print(f"🎾 ジュニア: {len(all_events['junior'])}件")
-    print(f"🏆 一般: {len(all_events['adult'])}件")
-
-    return all_events
-
-
-def generate_event_cards(events):
-    """イベントカードのHTML生成"""
-    if not events:
-        return '<div style="text-align:center; padding:40px; color:#999;">現在、新しい情報はありません。</div>'
-
-    html = ""
-    for ev in events:
-        is_result = ev.get("event_type") == "result"
-        link_label = "📊 試合結果を見る" if is_result else "📋 大会要項を見る"
-        card_class = "event-card result-card" if is_result else "event-card entry-card"
-        date_class = "event-date date-result" if is_result else "event-date date-entry"
-
-        html += f"""
-        <div class="{card_class}">
-            <div class="{date_class}">{ev['date_display']}</div>
-            <div class="event-details">
-                <div class="event-title">{ev['title']}</div>
-                <div class="event-actions">
-                    <a href="{ev['url']}" class="btn {'btn-result' if is_result else 'btn-info'}" target="_blank">{link_label}</a>
-                </div>
-            </div>
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# [3] HTML生成
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def generate_html(future_junior, future_adult, past_junior, past_adult):
+    """HTMLテンプレート生成"""
+    
+    # 未来ジュニアカード生成（オレンジ系）
+    future_junior_cards = ""
+    if future_junior:
+        for ev in future_junior:
+            future_junior_cards += f"""
+        <div class="event-card future">
+            <div class="event-date">{ev['date']}</div>
+            <div class="event-title">{ev['title']}</div>
+            <div class="event-source">主催: {ev['source']}</div>
+            <a href="{ev['url']}" target="_blank" class="event-link">詳細を見る →</a>
         </div>
-        """
-    return html
-
-
-def update_html(events):
-    """HTMLファイルを更新"""
-    update_time = datetime.now().strftime("%Y/%m/%d %H:%M")
-    junior_html = generate_event_cards(events.get("junior", []))
-    adult_html = generate_event_cards(events.get("adult", []))
-
-    html_content = f"""<!DOCTYPE html>
+"""
+    else:
+        future_junior_cards = '<div class="no-events">現在、募集中の大会はありません。</div>'
+    
+    # 未来一般カード生成（オレンジ系）
+    future_adult_cards = ""
+    if future_adult:
+        for ev in future_adult:
+            future_adult_cards += f"""
+        <div class="event-card future">
+            <div class="event-date">{ev['date']}</div>
+            <div class="event-title">{ev['title']}</div>
+            <div class="event-source">主催: {ev['source']}</div>
+            <a href="{ev['url']}" target="_blank" class="event-link">詳細を見る →</a>
+        </div>
+"""
+    else:
+        future_adult_cards = '<div class="no-events">現在、募集中の大会はありません。</div>'
+    
+    # 過去ジュニアカード生成（青系）
+    past_junior_cards = ""
+    if past_junior:
+        for ev in past_junior:
+            past_junior_cards += f"""
+        <div class="event-card past">
+            <div class="event-date">{ev['date']}</div>
+            <div class="event-title">{ev['title']}</div>
+            <div class="event-source">主催: {ev['source']}</div>
+            <a href="{ev['url']}" target="_blank" class="event-link">詳細を見る →</a>
+        </div>
+"""
+    else:
+        past_junior_cards = '<div class="no-events">過去の結果はまだありません。</div>'
+    
+    # 過去一般カード生成（青系）
+    past_adult_cards = ""
+    if past_adult:
+        for ev in past_adult:
+            past_adult_cards += f"""
+        <div class="event-card past">
+            <div class="event-date">{ev['date']}</div>
+            <div class="event-title">{ev['title']}</div>
+            <div class="event-source">主催: {ev['source']}</div>
+            <a href="{ev['url']}" target="_blank" class="event-link">詳細を見る →</a>
+        </div>
+"""
+    else:
+        past_adult_cards = '<div class="no-events">過去の結果はまだありません。</div>'
+    
+    # 最終更新日時
+    now = datetime.now()
+    update_time = now.strftime("%Y/%m/%d %H:%M")
+    
+    # HTMLテンプレート
+    return f"""<!DOCTYPE html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>福岡テニス速報</title>
-    <meta name="description" content="福岡・筑紫野エリアのテニス大会情報を自動収集・配信">
-    <style>
-        :root {{
-            --main: #FF8C00;
-            --main-dark: #E07B00;
-            --result: #1E7BC4;
-            --result-dark: #155FA0;
-            --bg: #FFFBF5;
-        }}
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif;
-            background: var(--bg);
-            color: #333;
-            padding-bottom: 100px;
-        }}
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎾 福岡テニス速報</title>
+<style>
+* {{
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}}
 
-        /* ヘッダー */
-        .header {{
-            background: linear-gradient(135deg, var(--main), #FFD700);
-            color: white;
-            padding: 25px 15px;
-            text-align: center;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-        }}
-        .header h1 {{ font-size: 26px; margin-bottom: 6px; font-weight: 700; }}
-        .header p {{ font-size: 13px; opacity: 0.95; }}
+body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+    background: #f5f5f5;
+    color: #333;
+}}
 
-        /* ★ 改良タブ：大きくて押しやすいボタン型 */
-        .tab-wrapper {{
-            display: flex;
-            gap: 10px;
-            padding: 12px 15px;
-            background: white;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-        }}
-        .tab-btn {{
-            flex: 1;
-            padding: 14px 10px;
-            border-radius: 10px;
-            border: 2px solid #E0E0E0;
-            background: #F5F5F5;
-            color: #999;
-            font-size: 16px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.25s;
-            text-align: center;
-            line-height: 1.4;
-        }}
-        .tab-btn .tab-icon {{ font-size: 24px; display: block; margin-bottom: 4px; }}
-        .tab-btn.active {{
-            background: var(--main);
-            border-color: var(--main);
-            color: white;
-            box-shadow: 0 3px 10px rgba(255,140,0,0.4);
-            transform: translateY(-1px);
-        }}
-        .tab-btn:not(.active):hover {{
-            background: #FFF3E0;
-            border-color: #FFB74D;
-            color: #E07B00;
-        }}
+.header {{
+    background: linear-gradient(135deg, #FF8C00 0%, #FFD700 100%);
+    color: white;
+    padding: 40px 20px;
+    text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}}
 
-        /* セクション */
-        .section {{ display: none; padding: 12px 15px; max-width: 600px; margin: 0 auto; }}
-        .section.active {{ display: block; animation: fadeIn 0.3s; }}
-        @keyframes fadeIn {{ from {{ opacity: 0; transform: translateY(8px); }} to {{ opacity: 1; transform: translateY(0); }} }}
+.header h1 {{
+    font-size: 36px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}}
 
-        /* イベントカード共通 */
-        .event-card {{
-            display: flex;
-            background: white;
-            margin-bottom: 12px;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.07);
-            transition: transform 0.15s;
-        }}
-        .event-card:active {{ transform: scale(0.98); }}
+.header p {{
+    font-size: 14px;
+    opacity: 0.9;
+}}
 
-        /* 【大会募集】カード：オレンジ */
-        .entry-card {{ border: 1px solid #FFE0B2; }}
-        .date-entry {{
-            background: #FFF3E0;
-            color: var(--main);
-            min-width: 72px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            border-right: 1px solid #FFE0B2;
-            font-size: 13px;
-            padding: 8px 4px;
-            text-align: center;
-        }}
+.notice {{
+    background: #FFF3CD;
+    border-left: 4px solid #FF8C00;
+    padding: 15px 20px;
+    margin: 20px auto;
+    max-width: 1000px;
+    border-radius: 8px;
+    text-align: center;
+    font-weight: bold;
+    color: #856404;
+}}
 
-        /* 【結果報告】カード：ブルー */
-        .result-card {{ border: 1px solid #BBDEFB; }}
-        .date-result {{
-            background: #E3F2FD;
-            color: var(--result);
-            min-width: 72px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            border-right: 1px solid #BBDEFB;
-            font-size: 13px;
-            padding: 8px 4px;
-            text-align: center;
-        }}
+.tabs {{
+    display: flex;
+    max-width: 1000px;
+    margin: 30px auto 0;
+    padding: 0 20px;
+    gap: 10px;
+}}
 
-        .event-details {{ flex: 1; padding: 13px 15px; }}
-        .event-title {{ font-size: 14px; font-weight: bold; margin-bottom: 10px; line-height: 1.5; color: #222; }}
-        .event-actions {{ margin-top: 6px; }}
+.tab {{
+    flex: 1;
+    padding: 18px;
+    background: white;
+    border: none;
+    border-radius: 12px 12px 0 0;
+    font-size: 18px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    color: #666;
+    border-bottom: 4px solid transparent;
+}}
 
-        /* ボタン */
-        .btn {{
-            display: inline-block;
-            padding: 7px 13px;
-            border-radius: 5px;
-            text-decoration: none;
-            font-size: 12px;
-            font-weight: bold;
-            transition: all 0.2s;
-        }}
-        .btn-info {{ border: 1.5px solid var(--main); color: var(--main); background: white; }}
-        .btn-info:hover {{ background: var(--main); color: white; }}
-        .btn-result {{ background: var(--result); color: white; border: 1.5px solid var(--result); }}
-        .btn-result:hover {{ background: var(--result-dark); }}
+.tab.active {{
+    background: linear-gradient(135deg, #FF8C00 0%, #FFD700 100%);
+    color: white;
+    border-bottom-color: #FF8C00;
+}}
 
-        /* フッター */
-        .footer {{
-            position: fixed;
-            bottom: 0;
-            width: 100%;
-            background: white;
-            padding: 12px 15px;
-            text-align: center;
-            font-size: 11px;
-            border-top: 1px solid #EEE;
-            color: #aaa;
-        }}
+.tab:hover:not(.active) {{
+    background: #f8f8f8;
+}}
 
-        @media (min-width: 768px) {{
-            .header h1 {{ font-size: 32px; }}
-            .section {{ padding: 20px; }}
-            .tab-btn {{ font-size: 18px; padding: 16px; }}
-        }}
-    </style>
+.tab-content {{
+    display: none;
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 30px 20px;
+}}
+
+.tab-content.active {{
+    display: block;
+}}
+
+.section-separator {{
+    margin: 40px 0;
+    text-align: center;
+    position: relative;
+}}
+
+.section-separator::before {{
+    content: '';
+    display: block;
+    height: 2px;
+    background: linear-gradient(to right, transparent, #ddd, transparent);
+    margin-bottom: 20px;
+}}
+
+.section-title {{
+    font-size: 24px;
+    font-weight: bold;
+    margin-bottom: 10px;
+    display: inline-block;
+    padding: 10px 30px;
+    border-radius: 50px;
+}}
+
+.section-title.future {{
+    background: linear-gradient(135deg, #FF8C00, #FFD700);
+    color: white;
+}}
+
+.section-title.past {{
+    background: linear-gradient(135deg, #1976D2, #42A5F5);
+    color: white;
+}}
+
+.event-card {{
+    background: white;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 15px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    transition: transform 0.2s, box-shadow 0.2s;
+}}
+
+.event-card.future {{
+    border-left: 5px solid #FF8C00;
+}}
+
+.event-card.past {{
+    border-left: 5px solid #1976D2;
+}}
+
+.event-card:hover {{
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}}
+
+.event-date {{
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 10px;
+}}
+
+.future .event-date {{
+    background: #FFF3E0;
+    color: #FF8C00;
+}}
+
+.past .event-date {{
+    background: #E3F2FD;
+    color: #1976D2;
+}}
+
+.event-title {{
+    font-size: 18px;
+    font-weight: bold;
+    color: #1565C0;
+    margin: 10px 0;
+    line-height: 1.5;
+}}
+
+.event-source {{
+    font-size: 13px;
+    color: #666;
+    margin: 8px 0;
+}}
+
+.event-link {{
+    display: inline-block;
+    margin-top: 12px;
+    padding: 10px 20px;
+    border-radius: 6px;
+    font-weight: bold;
+    transition: background 0.3s;
+    text-decoration: none;
+}}
+
+.future .event-link {{
+    background: #FF8C00;
+    color: white;
+}}
+
+.future .event-link:hover {{
+    background: #E67E00;
+}}
+
+.past .event-link {{
+    background: #1976D2;
+    color: white;
+}}
+
+.past .event-link:hover {{
+    background: #1565C0;
+}}
+
+.no-events {{
+    text-align: center;
+    padding: 60px 20px;
+    color: #999;
+    font-size: 16px;
+}}
+
+.footer {{
+    text-align: center;
+    padding: 30px 20px;
+    color: #999;
+    font-size: 12px;
+    border-top: 1px solid #e0e0e0;
+    margin-top: 40px;
+}}
+
+@media (max-width: 768px) {{
+    .header h1 {{
+        font-size: 28px;
+    }}
+    
+    .tab {{
+        font-size: 16px;
+        padding: 14px;
+    }}
+    
+    .section-title {{
+        font-size: 20px;
+    }}
+    
+    .event-title {{
+        font-size: 16px;
+    }}
+}}
+</style>
 </head>
 <body>
-    <div class="header">
-        <h1>🎾 福岡テニス速報</h1>
-        <p>筑紫野エリアの大会・結果を自動収集</p>
-    </div>
 
-    <!-- ★ 大きいボタン型タブ -->
-    <div class="tab-wrapper">
-        <div class="tab-btn active" id="tab-jr" onclick="switchTab('jr')">
-            <span class="tab-icon">👦</span>ジュニア
-        </div>
-        <div class="tab-btn" id="tab-ad" onclick="switchTab('ad')">
-            <span class="tab-icon">🏆</span>一般・社会人
-        </div>
-    </div>
+<div class="header">
+    <h1>🎾 福岡テニス速報</h1>
+    <p>福岡エリアの大会・結果を自動収集 | v9.0 ULTIMATE</p>
+</div>
 
-    <div id="jr" class="section active">
-        {junior_html}
-    </div>
-    <div id="ad" class="section">
-        {adult_html}
-    </div>
+<div class="notice">
+    ⚠️ エントリーするときは、必ず主催のHPを確認してください！
+</div>
 
-    <div class="footer">
-        更新: {update_time} | テニスをにぎやかに！ 🎾
-    </div>
+<div class="tabs">
+    <button class="tab active" onclick="switchTab('junior')">👦 ジュニア</button>
+    <button class="tab" onclick="switchTab('adult')">🏆 一般・社会人</button>
+</div>
 
-    <script>
-        function switchTab(id) {{
-            document.getElementById('tab-jr').classList.toggle('active', id === 'jr');
-            document.getElementById('tab-ad').classList.toggle('active', id === 'ad');
-            document.querySelectorAll('.section').forEach(s => {{
-                s.classList.toggle('active', s.id === id);
-            }});
-            window.scrollTo({{ top: 0, behavior: 'smooth' }});
-        }}
-    </script>
+<div id="junior" class="tab-content active">
+    <!-- 未来（試合要項） -->
+    <div class="section-separator">
+        <div class="section-title future">📋 試合要項（募集中）</div>
+    </div>
+    {future_junior_cards}
+    
+    <!-- 過去（試合結果） -->
+    <div class="section-separator">
+        <div class="section-title past">🏅 試合結果（開催済み）</div>
+    </div>
+    {past_junior_cards}
+</div>
+
+<div id="adult" class="tab-content">
+    <!-- 未来（試合要項） -->
+    <div class="section-separator">
+        <div class="section-title future">📋 試合要項（募集中）</div>
+    </div>
+    {future_adult_cards}
+    
+    <!-- 過去（試合結果） -->
+    <div class="section-separator">
+        <div class="section-title past">🏅 試合結果（開催済み）</div>
+    </div>
+    {past_adult_cards}
+</div>
+
+<div class="footer">
+    最終更新: {update_time} | v9.0 ULTIMATE | テニスをいざやかに! 🎾
+</div>
+
+<script>
+function switchTab(tabName) {{
+    // すべてのタブを非アクティブに
+    document.querySelectorAll('.tab').forEach(tab => {{
+        tab.classList.remove('active');
+    }});
+    document.querySelectorAll('.tab-content').forEach(content => {{
+        content.classList.remove('active');
+    }});
+    
+    // クリックされたタブをアクティブに
+    event.target.classList.add('active');
+    document.getElementById(tabName).classList.add('active');
+}}
+</script>
+
 </body>
 </html>"""
 
-    try:
-        with open(HTML_FILE, "w", encoding="utf-8") as f:
-            f.write(html_content)
-        print("✅ HTMLファイル更新完了")
-    except Exception as e:
-        print(f"❌ HTMLファイル保存エラー: {e}")
 
-
-def send_email(subject, body):
-    """メール送信"""
-    if not all([SENDER_EMAIL, APP_PASSWORD, RECEIVER_EMAIL]):
-        print("⚠️ メール設定が不完全です（環境変数未設定）")
-        return
-    try:
-        msg = MIMEMultipart()
-        msg["From"] = SENDER_EMAIL
-        msg["To"] = RECEIVER_EMAIL
-        msg["Subject"] = subject
-        msg.attach(MIMEText(body, "plain", "utf-8"))
-
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(SENDER_EMAIL, APP_PASSWORD)
-            server.send_message(msg)
-        print("✅ メール送信成功")
-    except Exception as e:
-        print(f"❌ メール送信エラー: {e}")
-
-
-def post_to_threads(text):
-    """Threadsに投稿"""
-    if not all([THREADS_TOKEN, THREADS_USER_ID]):
-        print("⚠️ Threads設定が不完全です（環境変数未設定）")
-        return
-    try:
-        url = f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads"
-        params = {
-            "media_type": "TEXT",
-            "text": text,
-            "access_token": THREADS_TOKEN,
-        }
-        response = requests.post(url, params=params)
-        container_id = response.json().get("id")
-
-        if not container_id:
-            print("❌ Threadsコンテナ作成失敗")
-            return
-
-        time.sleep(2)
-
-        publish_url = f"https://graph.threads.net/v1.0/{THREADS_USER_ID}/threads_publish"
-        publish_params = {
-            "creation_id": container_id,
-            "access_token": THREADS_TOKEN,
-        }
-        publish_response = requests.post(publish_url, params=publish_params)
-
-        if publish_response.status_code == 200:
-            print("✅ Threads投稿成功")
-        else:
-            print(f"❌ Threads投稿エラー: {publish_response.status_code}")
-
-    except Exception as e:
-        print(f"❌ Threads投稿エラー: {e}")
-
-
-def main():
-    print("=" * 70)
-    print("🎾 福岡テニス情報収集システム v6.0")
-    print("=" * 70)
-
-    blacklist = load_blacklist()
-    all_events = {"junior": [], "adult": []}
-
-    for site_name, url in SITES.items():
-        print(f"\n📡 {site_name} をチェック中...")
-        content = scrape_site(url)
-
-        if content:
-            events = extract_all_events(content, url, site_name)
-            events["junior"] = apply_blacklist(events["junior"], blacklist)
-            events["adult"] = apply_blacklist(events["adult"], blacklist)
-            all_events["junior"].extend(events["junior"])
-            all_events["adult"].extend(events["adult"])
-
-    print("\n🌐 HTMLファイルを更新中...")
-    update_html(all_events)
-
-    total_events = len(all_events["junior"]) + len(all_events["adult"])
-
-    if total_events > 0:
-        print(f"\n📢 通知を送信中... (合計{total_events}件)")
-
-        email_body = f"""🎾 福岡テニス速報
-
-ジュニア: {len(all_events['junior'])}件
-一般: {len(all_events['adult'])}件
-
-詳細: https://hiro-ito1.github.io/tennis-info/
-"""
-        send_email("【福岡テニス速報】最新情報", email_body)
-
-        threads_text = f"""🎾 福岡テニス速報
-
-ジュニア: {len(all_events['junior'])}件
-一般: {len(all_events['adult'])}件
-
-https://hiro-ito1.github.io/tennis-info/"""
-
-        post_to_threads(threads_text)
-    else:
-        print("\n📭 イベント情報が取得できませんでした")
-
-    print("\n" + "=" * 70)
-    print("✅ 処理完了！")
-    print("=" * 70)
-
-
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# [5] メインエントリーポイント
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 if __name__ == "__main__":
-    main()
+    print("=" * 80)
+    print("🎾 福岡テニス速報 コレクター v9.0 ULTIMATE")
+    print("=" * 80)
+    
+    # 既存のevents.jsonを読み込んでHTML生成
+    events = load_events()
+    
+    if not events:
+        print("⚠️  events.json が見つかりません")
+        print("=" * 80)
+        exit(1)
+    
+    # 承認済みイベントのみ抽出
+    approved = [e for e in events if e.get("status") == "approved"]
+    
+    print(f"\n📊 データ状況:")
+    print(f"   全データ: {len(events)}件")
+    print(f"   承認済み: {len(approved)}件")
+    
+    # HTML生成
+    update_html(approved)
+    
+    print("\n✅ 処理完了")
+    print(f"   公開ページ: {INDEX_HTML}")
+    print("=" * 80)
