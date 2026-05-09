@@ -1,0 +1,34 @@
+{
+  "data_directory": "C:\\Users\\tenni\\tennis-info",
+  "sites": {
+    "ITS九州": {
+      "url": [
+        "https://its-kyushu.com/new-event"
+      ],
+      "parser_type": "table",
+      "direct_link": true
+    },
+    "福岡パシフィック": {
+      "url": [
+        "http://www.sp-fukuoka.com/"
+      ],
+      "parser_type": "list"
+    },
+    "筑紫野ローンテニスクラブ": {
+      "url": [
+        "https://chikushinotennis.web.fc2.com/"
+      ],
+      "parser_type": "list"
+    },
+    "城南テニスクラブ": {
+      "url": [
+        "https://jonantennis.net/convention/?id=convention"
+      ],
+      "parser_type": "table"
+    }
+  },
+  "backup": {
+    "enabled": true,
+    "keep_count": 5
+  }
+}
