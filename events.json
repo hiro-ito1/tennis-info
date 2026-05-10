@@ -8,7 +8,7 @@
     "url": "https://chikushinotennis.web.fc2.com/",
     "type": "結果",
     "direct_link": false,
-    "status": "approved"
+    "status": "rejected"
   },
   {
     "id": "auto_筑紫野ローンテニスクラブ_20260211_001",
@@ -19,7 +19,7 @@
     "url": "https://chikushinotennis.web.fc2.com/",
     "type": "結果",
     "direct_link": false,
-    "status": "approved"
+    "status": "rejected"
   },
   {
     "id": "auto_筑紫野ローンテニスクラブ_20260223_002",
@@ -30,7 +30,7 @@
     "url": "https://chikushinotennis.web.fc2.com/",
     "type": "結果",
     "direct_link": false,
-    "status": "approved"
+    "status": "rejected"
   },
   {
     "id": "auto_筑紫野ローンテニスクラブ_20260320_003",
@@ -581,5 +581,49 @@
     "type": "募集中",
     "direct_link": false,
     "status": "approved"
+  },
+  {
+    "id": "auto_福岡パシフィックテニスアカデミー_619_1608",
+    "status": "approved",
+    "date": "6/19",
+    "title": "6/19~20 U11女子シングルス　富士薬品セイムス ガールズカップ2026　九州大会　募集開始しました！！",
+    "url": "http://www.kasuga-tennis.com/pacific/event/form.php?cd=1908",
+    "category": "adult",
+    "source": "福岡パシフィックテニスアカデミー",
+    "collected_at": "2026/05/10 19:05",
+    "auto_collected": true
+  },
+  {
+    "id": "auto_福岡パシフィックテニスアカデミー_613_4953",
+    "status": "approved",
+    "date": "6/13",
+    "title": "6/13.14　2026韓国国際ジュニア大会九州予選U12　より高みを目指して！韓国連盟グレード1大会（TOP）2大会に出場権利があります！！１２歳以下男子キャンセル待ちにて受付中です！！",
+    "url": "http://www.kasuga-tennis.com/pacific/event/form.php?cd=1876",
+    "category": "junior",
+    "source": "福岡パシフィックテニスアカデミー",
+    "collected_at": "2026/05/10 19:05",
+    "auto_collected": true
+  },
+  {
+    "id": "auto_福岡パシフィックテニスアカデミー_613_7660",
+    "status": "rejected",
+    "date": "6/13",
+    "title": "6/13.14　2026韓国国際ジュニア大会九州予選U10　より高みを目指して！韓国連盟グレード1大会（TOP）2大会に出場権利があります！！１０歳以下男子満員のためキャンセル待ちにて受付中です！！",
+    "url": "http://www.kasuga-tennis.com/pacific/event/form.php?cd=1877",
+    "category": "junior",
+    "source": "福岡パシフィックテニスアカデミー",
+    "collected_at": "2026/05/10 19:05",
+    "auto_collected": true
+  },
+  {
+    "id": "auto_城南テニスクラブ_59_8013",
+    "status": "approved",
+    "date": "5/9",
+    "title": "2026.05.09大会参加状況更新！5/9（土）21：20　中止決定事項やキャンセル及びトラブル事項・その他注意事項はこちらです。ご一読ください。",
+    "url": "https://jonantennis.net/%e6%9c%aa%e5%88%86%e9%a1%9e/3446/",
+    "category": "adult",
+    "source": "城南テニスクラブ",
+    "collected_at": "2026/05/10 19:05",
+    "auto_collected": true
   }
 ]
