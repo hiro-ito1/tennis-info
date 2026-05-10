@@ -1,11 +1,7 @@
 """
-福岡テニス速報 管理画面 v9.0 ULTIMATE
+福岡テニス速報 管理画面 v9.0 ULTIMATE (Hybrid Edition)
 =====================================
-🚀 新機能:
-1. 主催者別タブ切り替え（筑紫野/ITS/パシフィック/城南/全て）
-2. 一括チェックボックス処理（承認/却下/カテゴリ変更）
-3. 「公開ページを表示」ボタン（右上）
-4. カード内に「公式サイト」「情報元」直リンク
+Windows/Linux 完全対応版
 """
 
 from flask import Flask, render_template_string, redirect, url_for, request
@@ -37,9 +33,20 @@ def save_config(config):
     except Exception as e:
         print("エラー: config.json保存エラー: {}".format(e))
 
+# --- DATA_DIR 設定セクション (CLAUDE & 軍師 最終安定版) ---
 CONFIG = load_config()
-DATA_DIR = Path(CONFIG.get("data_directory", os.getcwd()))
+PC_PATH = r"C:\Users\tenni\tennis-info"
+
+# 優先順位: 1.config.json → 2.PCパス(Windows) → 3.カレント(GitHub/Linux)
+if CONFIG.get("data_directory") and os.path.exists(CONFIG.get("data_directory")):
+    DATA_DIR = Path(CONFIG.get("data_directory"))
+elif os.path.exists(PC_PATH):
+    DATA_DIR = Path(PC_PATH)
+else:
+    DATA_DIR = Path(os.getcwd())
+
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+# -------------------------------------------------------
 
 EVENTS_FILE = DATA_DIR / "events.json"
 BACKUP_DIR = DATA_DIR / "backups"
@@ -47,7 +54,6 @@ BACKUP_DIR.mkdir(exist_ok=True)
 
 WEEKDAY_JP = ["月", "火", "水", "木", "金", "土", "日"]
 
-# 主催者リスト
 SOURCES = [
     "筑紫野ローンテニスクラブ",
     "ITS九州",
@@ -85,7 +91,6 @@ def save_events(events):
         print("エラー: events.json保存エラー: {}".format(e))
 
 def parse_date_for_sorting(date_str):
-    """曜日付きの '2026/5/17(日)' という形式を鉄壁に読み取る"""
     try:
         clean_date = date_str.split('(')[0].strip()
         parts = clean_date.split('/')
@@ -105,7 +110,6 @@ def parse_date_for_sorting(date_str):
         return date(2099, 12, 31)
 
 def add_weekday(date_str):
-    """マスター要件: 曜日の自動計算"""
     try:
         event_date = parse_date_for_sorting(date_str)
         month = event_date.month
@@ -115,14 +119,12 @@ def add_weekday(date_str):
         return date_str
 
 def sort_events_by_date(events):
-    """マスター要件: 時系列ソート（開催日が近い順・昇順）"""
     def get_date_str(e):
         return e.get("date_display") or e.get("date", "")
     
     return sorted(events, key=lambda e: parse_date_for_sorting(get_date_str(e)))
 
 def rebuild_html():
-    """HTMLを再生成"""
     try:
         import importlib.util
         spec = importlib.util.spec_from_file_location("tc", "tennis_collector.py")
@@ -193,21 +195,13 @@ body{font-family:-apple-system,sans-serif;background:#F5F5F5;}
 .form-group small{display:block;font-size:11px;color:#888;margin-top:4px;}
 .form-box{background:white;border-radius:10px;padding:20px;margin-bottom:20px;box-shadow:0 2px 6px rgba(0,0,0,0.08);}
 .form-box h3{font-size:16px;margin-bottom:15px;color:#333;}
-.category-group{background:white;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);}
-.category-group.junior{border:3px solid #1565C0;background:#F0F8FF;}
-.category-group.adult{border:3px solid #6A1B9A;background:#FBF5FF;}
-.category-group h3{font-size:18px;font-weight:bold;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid;}
-.category-group.junior h3{color:#1565C0;border-bottom-color:#1565C0;}
-.category-group.adult h3{color:#6A1B9A;border-bottom-color:#6A1B9A;}
-.source-group{background:white;border-radius:12px;padding:20px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,0.1);}
-.source-group h3{font-size:18px;font-weight:bold;margin-bottom:15px;padding-bottom:10px;border-bottom:2px solid #FF8C00;color:#FF8C00;}
 </style>
 </head>
 <body>
 
 <div class="header">
 <h1>🎾 テニス速報 管理画面 v9.0 ULTIMATE</h1>
-<p>主催者別タブ + 一括処理 + 公開ページ直リンク</p>
+<p>主催者別タブ + 一括処理 + Windows/Linux対応</p>
 <a href="../public/index.html" target="_blank" class="public-btn">📄 公開ページを表示</a>
 </div>
 
@@ -239,7 +233,6 @@ body{font-family:-apple-system,sans-serif;background:#F5F5F5;}
 <div class="tab-btn" onclick="switchTab('approved')">公開中</div>
 <div class="tab-btn" onclick="switchTab('rejected')">却下済み</div>
 <div class="tab-btn" onclick="switchTab('manual')">手動入力</div>
-<div class="tab-btn" onclick="switchTab('settings')">設定</div>
 </div>
 
 <!-- 全て -->
@@ -485,14 +478,6 @@ body{font-family:-apple-system,sans-serif;background:#F5F5F5;}
 </div>
 </div>
 
-<!-- 設定 -->
-<div class="section" id="section-settings">
-<div class="form-box">
-<h3>⚙️ 設定</h3>
-<p>バージョン: v9.0 ULTIMATE</p>
-</div>
-</div>
-
 <script>
 function switchTab(tab){
 document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
@@ -545,13 +530,10 @@ def index():
     approved = [e for e in events if e.get("status") == "approved"]
     rejected = [e for e in events if e.get("status") == "rejected"]
     
-    # 主催者別フィルタ
     pending_chikushino = [e for e in pending if e.get("source") == "筑紫野ローンテニスクラブ"]
     pending_its = [e for e in pending if e.get("source") == "ITS九州"]
     pending_pacific = [e for e in pending if e.get("source") == "福岡パシフィックテニスアカデミー"]
     pending_jonan = [e for e in pending if e.get("source") == "城南テニスクラブ"]
-    
-    config = load_config()
     
     return render_template_string(
         ADMIN_TEMPLATE,
