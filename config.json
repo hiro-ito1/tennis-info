@@ -1,34 +1,42 @@
 {
   "data_directory": "C:\\Users\\tenni\\tennis-info",
-  "sites": {
-    "ITS九州": {
-      "url": [
-        "https://its-kyushu.com/new-event"
-      ],
-      "parser_type": "table",
-      "direct_link": true
-    },
-    "福岡パシフィック": {
-      "url": [
-        "http://www.sp-fukuoka.com/"
-      ],
-      "parser_type": "list"
-    },
-    "筑紫野ローンテニスクラブ": {
-      "url": [
+  "sources": [
+    {
+      "name": "筑紫野ローンテニスクラブ",
+      "urls": [
         "https://chikushinotennis.web.fc2.com/"
       ],
-      "parser_type": "list"
+      "auto_collect": true,
+      "parser_type": "fc2_site"
     },
-    "城南テニスクラブ": {
-      "url": [
-        "https://jonantennis.net/convention/?id=convention"
+    {
+      "name": "ITS九州",
+      "urls": [
+        "https://its-kyushu.com/"
       ],
-      "parser_type": "table"
+      "auto_collect": true,
+      "parser_type": "wordpress"
+    },
+    {
+      "name": "福岡パシフィックテニスアカデミー",
+      "urls": [
+        "http://www.sp-fukuoka.com/"
+      ],
+      "auto_collect": true,
+      "parser_type": "generic"
+    },
+    {
+      "name": "城南テニスクラブ",
+      "urls": [
+        "https://jonantennis.net/"
+      ],
+      "auto_collect": true,
+      "parser_type": "generic"
     }
-  },
-  "backup": {
-    "enabled": true,
-    "keep_count": 5
+  ],
+  "scraping": {
+    "timeout": 10,
+    "retry_count": 3,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
   }
 }
