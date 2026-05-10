@@ -3,40 +3,19 @@
   "sources": [
     {
       "name": "筑紫野ローンテニスクラブ",
-      "urls": [
-        "https://chikushinotennis.web.fc2.com/"
-      ],
-      "auto_collect": true,
-      "parser_type": "fc2_site"
+      "url": "https://chikushinotennis.web.fc2.com/"
     },
     {
       "name": "ITS九州",
-      "urls": [
-        "https://its-kyushu.com/"
-      ],
-      "auto_collect": true,
-      "parser_type": "wordpress"
+      "url": "https://its-kyushu.com/"
     },
     {
       "name": "福岡パシフィックテニスアカデミー",
-      "urls": [
-        "http://www.sp-fukuoka.com/"
-      ],
-      "auto_collect": true,
-      "parser_type": "generic"
+      "url": "http://www.sp-fukuoka.com/"
     },
     {
       "name": "城南テニスクラブ",
-      "urls": [
-        "https://jonantennis.net/"
-      ],
-      "auto_collect": true,
-      "parser_type": "generic"
+      "url": "https://jonantennis.net/"
     }
-  ],
-  "scraping": {
-    "timeout": 10,
-    "retry_count": 3,
-    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-  }
+  ]
 }
