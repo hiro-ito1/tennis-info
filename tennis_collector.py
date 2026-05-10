@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-🎾 福岡テニス速報システム v9.0 ULTIMATE
+🎾 福岡テニス速報システム v9.0 ULTIMATE (Hybrid Edition)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🚀 新機能:
+Windows/Linux 完全対応版
 ✅ 未来（試合要項）: オレンジ系・昇順
 ✅ 過去（試合結果）: 青系・降順
-✅ セパレーターで明確分離
-✅ GitHub/Threads自動投稿対応
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 import json
@@ -15,15 +13,18 @@ import os
 from datetime import date, datetime
 from pathlib import Path
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# [1] 設定
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BASE_DIR = r"C:\Users\tenni\tennis-info"
+# --- BASE_DIR 設定セクション (CLAUDE & 軍師 最終安定版) ---
+# GitHub上ならカレントディレクトリ、PCなら指定パスを使用
+if os.path.exists(r"C:\Users\tenni\tennis-info"):
+    BASE_DIR = r"C:\Users\tenni\tennis-info"
+else:
+    BASE_DIR = os.getcwd()
+
 EVENTS_FILE = os.path.join(BASE_DIR, "events.json")
 PUBLIC_DIR = os.path.join(BASE_DIR, "public")
 INDEX_HTML = os.path.join(PUBLIC_DIR, "index.html")
+# -------------------------------------------------------
 
-# 主催者URL
 SITES = {
     "筑紫野ローンテニスクラブ": "https://chikushinotennis.web.fc2.com/",
     "ITS九州": "https://its-kyushu.com/",
@@ -31,9 +32,6 @@ SITES = {
     "城南テニスクラブ": "https://jonantennis.net/"
 }
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# [2] admin.py が呼び出す関数
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def load_events():
     """
     events.json を読み込んで返す
@@ -111,9 +109,6 @@ def update_html(approved_events):
         print(f"❌ HTML生成失敗: {e}")
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# [3] HTML生成
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def generate_html(future_junior, future_adult, past_junior, past_adult):
     """HTMLテンプレート生成"""
     
@@ -495,9 +490,6 @@ function switchTab(tabName) {{
 </html>"""
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# [5] メインエントリーポイント
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 if __name__ == "__main__":
     print("=" * 80)
     print("🎾 福岡テニス速報 コレクター v9.0 ULTIMATE")
