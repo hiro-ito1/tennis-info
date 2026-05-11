@@ -1,47 +1,76 @@
-name: 福岡テニス情報自動更新
+name: 福岡テニス速報 自動更新
 
 on:
   schedule:
-    # 毎朝8時（日本時間）= UTC 23時
+    # 日本時間 毎朝8時 (UTC 23時)
     - cron: '0 23 * * *'
-  workflow_dispatch:  # 手動実行も可能
+  
+  # 手動実行ボタンを有効化（サーバー時刻ずれ対策）
+  workflow_dispatch:
 
 jobs:
-  update:
+  update-tennis-info:
     runs-on: ubuntu-latest
     
     steps:
-    - name: チェックアウト
+    - name: 📥 リポジトリをチェックアウト
       uses: actions/checkout@v3
-      
-    - name: Pythonセットアップ
+    
+    - name: 🐍 Python環境セットアップ
       uses: actions/setup-python@v4
       with:
         python-version: '3.10'
-        
-    - name: 依存関係インストール
+    
+    - name: 📦 依存ライブラリインストール
       run: |
-        pip install requests beautifulsoup4
-        
-    - name: 情報収集実行
-      env:
-        SENDER_EMAIL: ${{ secrets.SENDER_EMAIL }}
-        APP_PASSWORD: ${{ secrets.APP_PASSWORD }}
-        RECEIVER_EMAIL: ${{ secrets.RECEIVER_EMAIL }}
-        THREADS_TOKEN: ${{ secrets.THREADS_TOKEN }}
-        THREADS_USER_ID: ${{ secrets.THREADS_USER_ID }}
+        pip install requests beautifulsoup4 lxml
+    
+    - name: 🔄 情報収集実行
       run: |
         python tennis_collector.py
-        
-    - name: 変更をコミット
+    
+    - name: 📊 収集結果確認
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-        git add index.html tennis_data.json
-        git diff --quiet && git diff --staged --quiet || git commit -m "🎾 自動更新: $(date +'%Y-%m-%d %H:%M')"
+        echo "=== events.json の内容確認 ==="
+        if [ -f events.json ]; then
+          echo "✅ events.json が生成されました"
+          wc -l events.json
+        else
+          echo "❌ events.json が見つかりません"
+          exit 1
+        fi
         
-    - name: GitHubにプッシュ
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: main
+        echo ""
+        echo "=== public/index.html の内容確認 ==="
+        if [ -f public/index.html ]; then
+          echo "✅ public/index.html が生成されました"
+          wc -l public/index.html
+        else
+          echo "❌ public/index.html が見つかりません"
+          exit 1
+        fi
+    
+    - name: 📤 変更をコミット＆プッシュ
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "GitHub Actions Bot"
+        
+        # v11.1対応：正しいファイルパスを指定
+        git add public/index.html events.json
+        
+        # 変更がある場合のみコミット
+        if git diff --staged --quiet; then
+          echo "📭 変更がありません。コミットをスキップします。"
+        else
+          git commit -m "🎾 自動更新: $(date '+%Y年%m月%d日 %H時%M分') JST"
+          git push
+          echo "✅ 更新をプッシュしました"
+        fi
+    
+    - name: 🎉 完了通知
+      run: |
+        echo "================================================"
+        echo "🎾 福岡テニス速報 自動更新完了"
+        echo "================================================"
+        echo "実行日時: $(TZ=Asia/Tokyo date '+%Y年%m月%d日 %H時%M分')"
+        echo "================================================"
